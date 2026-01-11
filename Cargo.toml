@@ -1,0 +1,51 @@
+[package]
+name = "ruster_revm"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance REVM-based token risk analyzer with Pre-Execution Risk Scoring (PERS)"
+
+[[bin]]
+name = "ruster_revm"
+path = "src/main.rs"
+
+[[bin]]
+name = "ruster_api"
+path = "src/bin/ruster_api.rs"
+
+[dependencies]
+# Alloy - Modern Ethereum library
+alloy = { version = "0.8", features = ["full"] }
+alloy-provider = "0.8"
+alloy-rpc-types = "0.8"
+alloy-transport-ws = "0.8"
+alloy-primitives = "0.8"
+alloy-sol-types = "0.8"
+
+# Async runtime
+tokio = { version = "1.43", features = ["full", "rt-multi-thread", "macros"] }
+futures-util = "0.3"
+
+# REVM - Fast EVM simulator
+revm = { version = "18", default-features = false, features = ["std", "serde"] }
+
+# Web Framework (Ruster REVM Cloud API)
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.4", features = ["timeout", "limit"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+
+# Utilities
+eyre = "0.6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dashmap = "6"
+hex = "0.4"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+lazy_static = "1.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

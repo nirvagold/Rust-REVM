@@ -1,0 +1,3 @@
+period_start,period_end,total_analyzed,total_threats,value_protected_eth,avg_latency_ms,honeypots_detected
+1768059079,1768059079,755,255,892.50,16.21,50
+1768061063,1768061063,755,255,892.50,16.21,50

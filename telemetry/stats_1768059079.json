@@ -1,0 +1,16 @@
+{
+  "total_analyzed": 755,
+  "total_threats": 255,
+  "threats_by_type": {
+    "honeypot": 50,
+    "sandwich_target": 75,
+    "high_tax": 30,
+    "high_slippage": 100
+  },
+  "total_value_protected_eth": 892.5,
+  "avg_latency_ms": 16.205298013245034,
+  "period_start": 1768059079,
+  "period_end": 1768059079,
+  "honeypots_detected": 50,
+  "estimated_usd_saved": 0.0
+}

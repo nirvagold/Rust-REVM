@@ -1,0 +1,393 @@
+openapi: 3.0.3
+info:
+  title: Ruster REVM API
+  description: |
+    Pre-Execution Risk Scoring (PERS) API for Ethereum tokens.
+    Detect honeypots, high-tax tokens, and MEV risks in milliseconds using REVM simulation.
+  version: 1.0.0
+  contact:
+    name: Ruster REVM Team
+    email: api@ruster-revm.io
+  license:
+    name: MIT License
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.ruster-revm.io/v1
+    description: Production
+  - url: http://localhost:3000/v1
+    description: Local Development
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /analyze/token:
+    post:
+      summary: Full PERS token analysis
+      description: |
+        Complete Pre-Execution Risk Scoring including honeypot simulation, 
+        tax detection, and MEV exposure analysis.
+        Returns granular risk score (0-100) with confidence level.
+      operationId: analyzeToken
+      tags: [Analysis]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenAnalysisRequest'
+      responses:
+        '200':
+          description: Analysis complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenAnalysisResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /honeypot/check:
+    post:
+      summary: Quick honeypot detection
+      description: |
+        Fast honeypot detection via REVM simulation.
+        Simulates Buy → Approve → Sell cycle in isolated environment.
+      operationId: checkHoneypot
+      tags: [Honeypot]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HoneypotCheckRequest'
+      responses:
+        '200':
+          description: Honeypot check complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HoneypotCheckResponse'
+
+  /analyze/batch:
+    post:
+      summary: Batch token analysis
+      description: |
+        Analyze multiple tokens in a single request.
+        Maximum 100 tokens per request.
+        Ideal for portfolio scanning or token launch monitoring.
+      operationId: batchAnalyze
+      tags: [Analysis]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchAnalysisRequest'
+      responses:
+        '200':
+          description: Batch analysis complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchAnalysisResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /stats:
+    get:
+      summary: Get protection statistics
+      description: Aggregate statistics for monitoring and reporting.
+      operationId: getStats
+      tags: [Telemetry]
+      responses:
+        '200':
+          description: Statistics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryStats'
+
+  /health:
+    get:
+      summary: Health check
+      description: API health and version information.
+      operationId: healthCheck
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+  schemas:
+    TokenAnalysisRequest:
+      type: object
+      required: [token_address]
+      properties:
+        token_address:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{40}$'
+          example: '0x6B175474E89094C44Da98b954EescdeCB5f8F4'
+        test_amount_eth:
+          type: string
+          default: '0.1'
+          description: ETH amount for REVM simulation
+        chain_id:
+          type: integer
+          default: 1
+          enum: [1, 42161, 8453]
+          description: '1=Mainnet, 42161=Arbitrum, 8453=Base'
+
+    TokenAnalysisResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RiskScore'
+        latency_ms:
+          type: number
+        timestamp:
+          type: integer
+
+    RiskScore:
+      type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: PERS risk score (0=safe, 100=critical)
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+        level:
+          type: string
+          enum: [SAFE, LOW, MEDIUM, HIGH, CRITICAL]
+        recommendation:
+          type: string
+        components:
+          type: object
+          properties:
+            honeypot:
+              type: integer
+            tax:
+              type: integer
+            liquidity:
+              type: integer
+            contract:
+              type: integer
+            mev_exposure:
+              type: integer
+
+    HoneypotCheckRequest:
+      type: object
+      required: [token_address]
+      properties:
+        token_address:
+          type: string
+        test_amount_eth:
+          type: string
+          default: '0.1'
+
+    HoneypotCheckResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            token_address:
+              type: string
+            is_honeypot:
+              type: boolean
+            risk_score:
+              type: integer
+            buy_success:
+              type: boolean
+            sell_success:
+              type: boolean
+            buy_tax_percent:
+              type: number
+            sell_tax_percent:
+              type: number
+            total_loss_percent:
+              type: number
+            reason:
+              type: string
+            simulation_latency_ms:
+              type: number
+
+    BatchAnalysisRequest:
+      type: object
+      required: [tokens]
+      properties:
+        tokens:
+          type: array
+          items:
+            type: string
+          maxItems: 100
+          description: List of token addresses to analyze
+        test_amount_eth:
+          type: string
+          default: '0.1'
+        chain_id:
+          type: integer
+          default: 1
+        concurrency:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 50
+
+    BatchAnalysisResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            total_requested:
+              type: integer
+            total_processed:
+              type: integer
+            total_safe:
+              type: integer
+            total_risky:
+              type: integer
+            total_honeypots:
+              type: integer
+            processing_time_ms:
+              type: number
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/BatchTokenResult'
+
+    BatchTokenResult:
+      type: object
+      properties:
+        token_address:
+          type: string
+        status:
+          type: string
+          enum: [success, error]
+        risk_score:
+          type: integer
+        is_honeypot:
+          type: boolean
+        level:
+          type: string
+        error:
+          type: string
+        latency_ms:
+          type: number
+
+    TelemetryStats:
+      type: object
+      properties:
+        total_analyzed:
+          type: integer
+        total_threats:
+          type: integer
+        honeypots_detected:
+          type: integer
+        total_value_protected_eth:
+          type: number
+        avg_latency_ms:
+          type: number
+
+    HealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+            version:
+              type: string
+            uptime_seconds:
+              type: integer
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+
+    Unauthorized:
+      description: Invalid or missing API key
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                  retry_after:
+                    type: integer
