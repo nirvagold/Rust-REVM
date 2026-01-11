@@ -10,12 +10,12 @@
 //!   RUSTER_HOST - Server host (default: 0.0.0.0)
 //!   RUST_LOG    - Log level (default: info)
 
-use ruster_revm::api::{create_router, handlers::AppState};
+use ruster_revm::api::{create_router, handlers::AppState, middleware::start_cleanup_task};
 use ruster_revm::telemetry::TelemetryCollector;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
@@ -31,9 +31,14 @@ async fn main() -> eyre::Result<()> {
     
     // Initialize telemetry
     let telemetry = Arc::new(TelemetryCollector::new());
+    let telemetry_for_shutdown = telemetry.clone();
     
     // Create app state
     let state = Arc::new(AppState::new(telemetry));
+    
+    // Start background cleanup task for rate limiter
+    start_cleanup_task();
+    info!("🧹 Background cleanup task started");
     
     // Create router
     let app = create_router(state);
@@ -57,10 +62,42 @@ async fn main() -> eyre::Result<()> {
     info!("  GET  /v1/stats            - Protection statistics");
     info!("  GET  /v1/health           - Health check");
     info!("");
+    info!("Press Ctrl+C for graceful shutdown");
+    info!("");
     
-    // Start server
+    // Start server with graceful shutdown
     let listener = TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    
+    // Create shutdown signal handler
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+    
+    // Run server with graceful shutdown
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+    
+    // Graceful shutdown sequence
+    info!("");
+    info!("🛑 Shutdown signal received, cleaning up...");
+    
+    // Export final telemetry
+    info!("📊 Exporting final telemetry...");
+    let stats = telemetry_for_shutdown.get_stats();
+    info!("   Total analyzed: {}", stats.total_analyzed);
+    info!("   Total threats: {}", stats.total_threats);
+    info!("   Honeypots detected: {}", stats.honeypots_detected);
+    
+    // Try to export stats to file
+    match telemetry_for_shutdown.export_stats_json() {
+        Ok(path) => info!("   ✅ Stats exported to: {}", path.display()),
+        Err(e) => warn!("   ⚠️ Failed to export stats: {}", e),
+    }
+    
+    info!("👋 Ruster REVM API shutdown complete");
     
     Ok(())
 }

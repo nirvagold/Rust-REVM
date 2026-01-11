@@ -1,0 +1,58 @@
+# ============================================
+# Ruster REVM - Docker Compose
+# ============================================
+# 
+# Quick Start:
+#   1. Copy .env.example to .env
+#   2. Fill in your ETH_WSS_URL and ETH_HTTP_URL
+#   3. Run: docker-compose up -d
+#
+# View logs: docker-compose logs -f
+# Stop: docker-compose down
+
+version: '3.8'
+
+services:
+  ruster-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ruster-revm-api
+    ports:
+      - "${RUSTER_PORT:-3000}:3000"
+    environment:
+      - RUSTER_HOST=0.0.0.0
+      - RUSTER_PORT=3000
+      - RUST_LOG=${RUST_LOG:-info}
+      - ETH_WSS_URL=${ETH_WSS_URL}
+      - ETH_HTTP_URL=${ETH_HTTP_URL}
+    volumes:
+      - ./telemetry:/app/telemetry
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+
+# Optional: Add Redis for distributed rate limiting (future)
+# redis:
+#   image: redis:7-alpine
+#   container_name: ruster-redis
+#   ports:
+#     - "6379:6379"
+#   volumes:
+#     - redis_data:/data
+#   restart: unless-stopped
+
+# volumes:
+#   redis_data:

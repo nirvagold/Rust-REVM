@@ -334,15 +334,17 @@ ruster_revm/
 ## 🐳 Docker Deployment
 
 ```dockerfile
-FROM rust:1.75-slim as builder
+# Multi-stage build for minimal image size (~25MB)
+FROM rust:1.75-slim-bookworm AS builder
 WORKDIR /app
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --bin ruster_api
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/ruster_api /usr/local/bin/
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:3000/v1/health || exit 1
 CMD ["ruster_api"]
 ```
 
@@ -355,6 +357,9 @@ docker run -p 3000:3000 \
   -e ETH_WSS_URL="wss://..." \
   -e ETH_HTTP_URL="https://..." \
   ruster-revm
+
+# Or use docker-compose
+docker-compose up -d
 ```
 
 ---

@@ -7,4 +7,5 @@ pub mod routes;
 pub mod types;
 
 pub use routes::create_router;
+pub use middleware::start_cleanup_task;
 pub use types::*;

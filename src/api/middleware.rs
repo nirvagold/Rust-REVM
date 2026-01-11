@@ -9,7 +9,7 @@ use axum::{
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{info, warn};
+use tracing::{info, warn, debug};
 
 /// Rate limiter configuration
 pub struct RateLimitConfig {
@@ -17,6 +17,8 @@ pub struct RateLimitConfig {
     pub requests_per_window: u32,
     /// Window duration
     pub window_duration: Duration,
+    /// Cleanup interval (remove expired entries)
+    pub cleanup_interval: Duration,
 }
 
 impl Default for RateLimitConfig {
@@ -24,22 +26,26 @@ impl Default for RateLimitConfig {
         Self {
             requests_per_window: 100,  // 100 requests
             window_duration: Duration::from_secs(60), // per minute
+            cleanup_interval: Duration::from_secs(300), // cleanup every 5 minutes
         }
     }
 }
 
-/// In-memory rate limiter
+/// In-memory rate limiter with automatic cleanup
 /// Production: Use Redis for distributed rate limiting
 pub struct RateLimiter {
     /// Request counts per IP/API key
     requests: DashMap<String, (u32, Instant)>,
     config: RateLimitConfig,
+    /// Last cleanup timestamp
+    last_cleanup: std::sync::RwLock<Instant>,
 }
 
 impl RateLimiter {
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             requests: DashMap::new(),
+            last_cleanup: std::sync::RwLock::new(Instant::now()),
             config,
         }
     }
@@ -47,6 +53,9 @@ impl RateLimiter {
     /// Check if request is allowed, returns (allowed, remaining, reset_seconds)
     pub fn check(&self, key: &str) -> (bool, u32, u64) {
         let now = Instant::now();
+        
+        // Trigger cleanup if needed (non-blocking check)
+        self.maybe_cleanup(now);
         
         let mut entry = self.requests.entry(key.to_string()).or_insert((0, now));
         
@@ -69,13 +78,56 @@ impl RateLimiter {
         (true, remaining - 1, reset_secs)
     }
     
-    /// Cleanup old entries (call periodically)
-    #[allow(dead_code)]
-    pub fn cleanup(&self) {
-        let now = Instant::now();
+    /// Check if cleanup is needed and perform it
+    fn maybe_cleanup(&self, now: Instant) {
+        // Quick read check first (non-blocking)
+        let should_cleanup = {
+            if let Ok(last) = self.last_cleanup.read() {
+                now.duration_since(*last) > self.config.cleanup_interval
+            } else {
+                false
+            }
+        };
+        
+        if should_cleanup {
+            // Try to acquire write lock (non-blocking)
+            if let Ok(mut last) = self.last_cleanup.try_write() {
+                // Double-check after acquiring lock
+                if now.duration_since(*last) > self.config.cleanup_interval {
+                    self.cleanup_expired_entries(now);
+                    *last = now;
+                }
+            }
+        }
+    }
+    
+    /// Remove expired entries to prevent memory growth
+    fn cleanup_expired_entries(&self, now: Instant) {
+        let before_count = self.requests.len();
+        let ttl = self.config.window_duration * 2; // Keep entries for 2x window duration
+        
         self.requests.retain(|_, (_, timestamp)| {
-            now.duration_since(*timestamp) < self.config.window_duration * 2
+            now.duration_since(*timestamp) < ttl
         });
+        
+        let removed = before_count - self.requests.len();
+        if removed > 0 {
+            debug!(
+                removed = removed,
+                remaining = self.requests.len(),
+                "Rate limiter cleanup completed"
+            );
+        }
+    }
+    
+    /// Get current number of tracked keys (for monitoring)
+    pub fn tracked_keys_count(&self) -> usize {
+        self.requests.len()
+    }
+    
+    /// Force cleanup (for manual trigger or shutdown)
+    pub fn force_cleanup(&self) {
+        self.cleanup_expired_entries(Instant::now());
     }
 }
 
@@ -88,6 +140,21 @@ impl Default for RateLimiter {
 // Global rate limiter instance
 lazy_static::lazy_static! {
     pub static ref RATE_LIMITER: Arc<RateLimiter> = Arc::new(RateLimiter::default());
+}
+
+/// Start background cleanup task (call once at server startup)
+pub fn start_cleanup_task() {
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(Duration::from_secs(300)); // Every 5 minutes
+        loop {
+            interval.tick().await;
+            RATE_LIMITER.force_cleanup();
+            debug!(
+                tracked_keys = RATE_LIMITER.tracked_keys_count(),
+                "Periodic rate limiter cleanup"
+            );
+        }
+    });
 }
 
 /// API Key authentication middleware

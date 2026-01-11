@@ -1,0 +1,37 @@
+# Build artifacts
+target/
+*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in image)
+*.md
+!README.md
+docs/
+
+# Development files
+.env
+.env.local
+*.log
+
+# Telemetry data (generated at runtime)
+telemetry/*.json
+telemetry/*.csv
+
+# Tests (not needed in production)
+tests/
+examples/
+
+# SDK (separate package)
+sdk/
+
+# API spec (documentation only)
+api/
