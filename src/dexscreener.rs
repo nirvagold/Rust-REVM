@@ -287,36 +287,41 @@ impl DexPair {
     }
 
     /// Map DexScreener dex_id to router address
+    /// Only returns routers that are compatible with Uniswap V2 interface (getAmountsOut)
     fn dex_id_to_router(dex_id: &str, chain_id: &str) -> Option<String> {
+        // Note: We only support Uniswap V2 style routers
+        // V3, Aerodrome/Velodrome, and other AMMs have different interfaces
         match (dex_id.to_lowercase().as_str(), chain_id.to_lowercase().as_str()) {
-            // Ethereum
-            ("uniswap", "ethereum") => Some("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".to_string()),
+            // Ethereum - V2 compatible
+            ("uniswap", "ethereum") => Some("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".to_string()), // Uniswap V2
             ("sushiswap", "ethereum") => Some("0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F".to_string()),
             
-            // BSC
-            ("pancakeswap", "bsc") => Some("0x10ED43C718714eb63d5aA57B78B54704E256024E".to_string()),
+            // BSC - V2 compatible
+            ("pancakeswap", "bsc") => Some("0x10ED43C718714eb63d5aA57B78B54704E256024E".to_string()), // PancakeSwap V2
             ("biswap", "bsc") => Some("0x3a6d8cA21D1CF76F653A67577FA0D27453350dD8".to_string()),
             
-            // Polygon
+            // Polygon - V2 compatible
             ("quickswap", "polygon") => Some("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff".to_string()),
             ("sushiswap", "polygon") => Some("0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".to_string()),
             
-            // Arbitrum
+            // Arbitrum - V2 compatible
             ("camelot", "arbitrum") => Some("0xc873fEcbd354f5A56E00E710B90EF4201db2448d".to_string()),
             ("sushiswap", "arbitrum") => Some("0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".to_string()),
             
-            // Optimism
-            ("velodrome", "optimism") => Some("0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858".to_string()),
+            // Optimism - Velodrome is NOT V2 compatible, skip
+            // ("velodrome", "optimism") => NOT SUPPORTED - different interface
             
-            // Avalanche
+            // Avalanche - V2 compatible
             ("traderjoe", "avalanche") => Some("0x60aE616a2155Ee3d9A68541Ba4544862310933d4".to_string()),
             ("pangolin", "avalanche") => Some("0xE54Ca86531e17Ef3616d22Ca28b0D458b6C89106".to_string()),
             
-            // Base
-            ("aerodrome", "base") => Some("0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43".to_string()),
+            // Base - Only V2 compatible routers
+            // Aerodrome is NOT V2 compatible (Velodrome fork)
+            // Uniswap on Base is V3 (NOT compatible)
             ("baseswap", "base") => Some("0x327Df1E6de05895d2ab08513aaDD9313Fe505d86".to_string()),
             ("sushiswap", "base") => Some("0x6BDED42c6DA8FBf0d2bA55B2fa120C5e0c8D7891".to_string()),
-            ("uniswap", "base") => Some("0x2626664c2603336E57B271c5C0b26F421741e481".to_string()),
+            // PancakeSwap V2 on Base
+            ("pancakeswap", "base") => Some("0x02a84c1b3BBD7401a5f7fa98a384EBC70bB5749E".to_string()),
             
             _ => None,
         }

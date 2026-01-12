@@ -223,6 +223,7 @@ impl ChainConfig {
 
         // ============================================
         // Optimism
+        // NOTE: Velodrome is NOT V2 compatible, use SushiSwap instead
         // ============================================
         let op_rpc = std::env::var("OPTIMISM_HTTP_URL")
             .ok()
@@ -234,7 +235,9 @@ impl ChainConfig {
             symbol: "ETH".to_string(),
             weth: "0x4200000000000000000000000000000000000006".parse().unwrap(),
             routers: vec![
-                DexRouter { name: "Velodrome".to_string(), address: "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858".parse().unwrap() },
+                // SushiSwap on Optimism - V2 compatible
+                DexRouter { name: "SushiSwap".to_string(), address: "0x4C5D5234f232BD2D76B96aA33F5AE4FCF0E4BFAb".parse().unwrap() },
+                // Velodrome REMOVED - not V2 compatible
             ],
             rpc_url: op_rpc,
         });
@@ -260,6 +263,8 @@ impl ChainConfig {
 
         // ============================================
         // Base
+        // NOTE: Aerodrome/Uniswap V3 are NOT compatible with V2 interface
+        // Only use V2-compatible routers
         // ============================================
         let base_rpc = std::env::var("BASE_HTTP_URL")
             .ok()
@@ -271,9 +276,11 @@ impl ChainConfig {
             symbol: "ETH".to_string(),
             weth: "0x4200000000000000000000000000000000000006".parse().unwrap(),
             routers: vec![
-                DexRouter { name: "Aerodrome".to_string(), address: "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43".parse().unwrap() },
+                // PancakeSwap V2 on Base - V2 compatible!
+                DexRouter { name: "PancakeSwap V2".to_string(), address: "0x02a84c1b3BBD7401a5f7fa98a384EBC70bB5749E".parse().unwrap() },
                 DexRouter { name: "BaseSwap".to_string(), address: "0x327Df1E6de05895d2ab08513aaDD9313Fe505d86".parse().unwrap() },
                 DexRouter { name: "SushiSwap".to_string(), address: "0x6BDED42c6DA8FBf0d2bA55B2fa120C5e0c8D7891".parse().unwrap() },
+                // Aerodrome REMOVED - not V2 compatible (Velodrome fork)
             ],
             rpc_url: base_rpc,
         });
