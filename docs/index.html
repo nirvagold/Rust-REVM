@@ -3,456 +3,863 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ruster Shield - Token Risk Analyzer</title>
+    <title>Ruster Shield - Pre-Execution Token Risk Analyzer</title>
+    <meta name="description" content="Detect honeypot tokens instantly with REVM simulation. Multi-chain support for Ethereum, BSC, Polygon, Arbitrum, Optimism, Avalanche, and Base.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    },
                     colors: {
-                        dark: { 900: '#0d1117', 800: '#161b22', 700: '#21262d', 600: '#30363d' },
-                        accent: { green: '#00d395', red: '#ff4757', yellow: '#ffa502', blue: '#3b82f6' }
+                        dark: { 950: '#080b10', 900: '#0d1117', 800: '#161b22', 700: '#21262d', 600: '#30363d' },
+                        neon: { green: '#10b981', red: '#ef4444', yellow: '#f59e0b', blue: '#3b82f6', purple: '#8b5cf6', cyan: '#06b6d4' }
                     }
                 }
             }
         }
     </script>
     <style>
-        @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 20px rgba(0, 211, 149, 0.3); } 50% { box-shadow: 0 0 40px rgba(0, 211, 149, 0.6); } }
-        .glow-safe { animation: pulse-glow 2s infinite; }
-        @keyframes pulse-danger { 0%, 100% { box-shadow: 0 0 20px rgba(255, 71, 87, 0.3); } 50% { box-shadow: 0 0 40px rgba(255, 71, 87, 0.6); } }
-        .glow-danger { animation: pulse-danger 1s infinite; }
-        .spinner { border: 3px solid #30363d; border-top: 3px solid #00d395; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes glow { from { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); } to { box-shadow: 0 0 40px rgba(16, 185, 129, 0.4); } }
+        @keyframes glow-danger { from { box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); } to { box-shadow: 0 0 40px rgba(239, 68, 68, 0.4); } }
+        @keyframes scan { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+        @keyframes progress { from { width: 0%; } to { width: var(--progress); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes typing { from { width: 0; } to { width: 100%; } }
+        
+        .glow-safe { animation: glow 2s ease-in-out infinite alternate; }
+        .glow-danger { animation: glow-danger 1s ease-in-out infinite alternate; }
+        .animate-fadeIn { animation: fadeIn 0.5s ease-out forwards; }
+        .animate-slideIn { animation: slideIn 0.3s ease-out forwards; }
+        .progress-bar { animation: progress 1s ease-out forwards; }
+        
+        .spinner { border: 3px solid #30363d; border-top: 3px solid #10b981; border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .tab-active { border-bottom: 2px solid #00d395; color: #00d395; }
-        pre { background: #161b22; border-radius: 8px; padding: 16px; overflow-x: auto; }
-        code { font-family: 'Fira Code', monospace; font-size: 14px; }
+        
+        .tab-active { border-bottom: 2px solid #10b981; color: #10b981; }
+        .glass { background: rgba(22, 27, 34, 0.8); backdrop-filter: blur(12px); }
+        
+        pre { background: #0d1117; border-radius: 8px; padding: 16px; overflow-x: auto; border: 1px solid #30363d; }
+        code { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+        
+        .chain-badge { transition: all 0.3s ease; }
+        .chain-badge:hover { transform: scale(1.05); }
+        .chain-badge.online::before { content: ''; display: inline-block; width: 6px; height: 6px; background: #10b981; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
+        
+        .tech-logo { filter: grayscale(100%); opacity: 0.6; transition: all 0.3s ease; }
+        .tech-logo:hover { filter: grayscale(0%); opacity: 1; }
+        
+        .simulation-step { opacity: 0.3; transform: translateX(-5px); transition: all 0.3s ease; }
+        .simulation-step.active { opacity: 1; transform: translateX(0); color: #10b981; }
+        .simulation-step.completed { opacity: 1; transform: translateX(0); color: #10b981; }
+        .simulation-step.failed { opacity: 1; transform: translateX(0); color: #ef4444; }
+        
+        .risk-bar { height: 8px; border-radius: 4px; background: #21262d; overflow: hidden; }
+        .risk-bar-fill { height: 100%; border-radius: 4px; transition: width 1s ease-out; }
     </style>
 </head>
-<body class="bg-dark-900 text-gray-100 min-h-screen">
+<body class="bg-dark-950 text-gray-100 min-h-screen font-sans">
     <!-- Header -->
-    <header class="border-b border-dark-600 bg-dark-800/50 backdrop-blur-sm sticky top-0 z-50">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+    <header class="border-b border-dark-600 glass sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gradient-to-br from-accent-green to-accent-blue rounded-lg flex items-center justify-center">
+                <div class="w-10 h-10 bg-gradient-to-br from-neon-green to-neon-cyan rounded-xl flex items-center justify-center shadow-lg shadow-neon-green/20">
                     <span class="text-xl">🛡️</span>
                 </div>
                 <div>
-                    <h1 class="text-xl font-bold">Ruster Shield</h1>
-                    <p class="text-xs text-gray-500">Token Risk Analyzer</p>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-neon-green to-neon-cyan bg-clip-text text-transparent">Ruster Shield</h1>
+                    <p class="text-xs text-gray-500">Pre-Execution Risk Scoring</p>
                 </div>
             </div>
             <div class="flex items-center gap-4">
-                <span class="px-3 py-1 bg-dark-700 rounded-full text-xs text-accent-green border border-accent-green/30">
-                    🦀 Powered by Rust REVM
+                <span class="hidden sm:flex px-3 py-1.5 bg-dark-800 rounded-full text-xs text-neon-green border border-neon-green/30 items-center gap-2">
+                    <span class="w-2 h-2 bg-neon-green rounded-full animate-pulse"></span>
+                    API Online
                 </span>
-                <a href="https://github.com/nirvagold/Rust-REVM" target="_blank" class="text-gray-400 hover:text-white transition">
-                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                <a href="https://github.com/nirvagold/Rust-REVM" target="_blank" class="text-gray-400 hover:text-white transition p-2 hover:bg-dark-700 rounded-lg">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
                 </a>
             </div>
         </div>
     </header>
 
-    <!-- Tabs -->
-    <div class="border-b border-dark-600 bg-dark-800/30">
-        <div class="max-w-6xl mx-auto px-4">
-            <nav class="flex gap-8">
-                <button onclick="showTab('tester')" id="tab-tester" class="py-4 text-sm font-medium tab-active">
-                    🔍 Token Tester
-                </button>
-                <button onclick="showTab('docs')" id="tab-docs" class="py-4 text-sm font-medium text-gray-400 hover:text-white">
-                    📖 API Documentation
-                </button>
+    <!-- Navigation Tabs -->
+    <div class="border-b border-dark-600 bg-dark-900/50">
+        <div class="max-w-7xl mx-auto px-4">
+            <nav class="flex gap-1 overflow-x-auto">
+                <button onclick="showTab('tester')" id="tab-tester" class="py-4 px-4 text-sm font-medium tab-active transition-all whitespace-nowrap">🔍 Token Analyzer</button>
+                <button onclick="showTab('how')" id="tab-how" class="py-4 px-4 text-sm font-medium text-gray-400 hover:text-white transition-all whitespace-nowrap">⚙️ How It Works</button>
+                <button onclick="showTab('pricing')" id="tab-pricing" class="py-4 px-4 text-sm font-medium text-gray-400 hover:text-white transition-all whitespace-nowrap">💎 Pricing</button>
+                <button onclick="showTab('docs')" id="tab-docs" class="py-4 px-4 text-sm font-medium text-gray-400 hover:text-white transition-all whitespace-nowrap">📖 API Docs</button>
             </nav>
         </div>
     </div>
 
-    <main class="max-w-6xl mx-auto px-4 py-8">
-        <!-- Token Tester Tab -->
-        <div id="content-tester">
-            <!-- Hero -->
-            <div class="text-center mb-8">
-                <h2 class="text-3xl font-bold mb-3 bg-gradient-to-r from-accent-green to-accent-blue bg-clip-text text-transparent">
-                    Detect Honeypot Tokens Instantly
-                </h2>
-                <p class="text-gray-400 max-w-xl mx-auto">
-                    Paste any token address. We auto-detect the chain and simulate buy/sell on real blockchain state.
-                </p>
-                <!-- Supported Chains -->
-                <div class="flex justify-center gap-2 mt-4 flex-wrap">
-                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔷 Ethereum</span>
-                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🟡 BSC</span>
-                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🟣 Polygon</span>
-                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔵 Arbitrum</span>
-                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔴 Optimism</span>
-                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔺 Avalanche</span>
-                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔵 Base</span>
+    <main class="max-w-7xl mx-auto px-4 py-8">
+
+        <!-- ============================================ -->
+        <!-- TAB: Token Analyzer -->
+        <!-- ============================================ -->
+        <div id="content-tester" class="tab-content">
+            <!-- Network Status Bar -->
+            <div class="mb-6 p-4 bg-dark-800 rounded-xl border border-dark-600">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-sm font-medium text-gray-400">Network Status</span>
+                    <span class="text-xs text-neon-green">All Systems Operational</span>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Ethereum</span>
+                    <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">BSC</span>
+                    <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Polygon</span>
+                    <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Arbitrum</span>
+                    <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Optimism</span>
+                    <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Avalanche</span>
+                    <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Base</span>
                 </div>
             </div>
 
-            <!-- Search Box - SIMPLIFIED: No chain selector -->
-            <div class="max-w-2xl mx-auto mb-8">
-                <div class="bg-dark-800 rounded-2xl p-6 border border-dark-600">
-                    <label class="block text-sm text-gray-400 mb-2">Token Contract Address</label>
-                    <input type="text" id="tokenInput" 
-                        placeholder="0x... (any EVM chain)" 
-                        class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent-green transition font-mono text-sm mb-4">
-                    <button id="analyzeBtn" onclick="analyzeToken()"
-                        class="w-full bg-gradient-to-r from-accent-green to-accent-blue px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50">
-                        <span id="btnText">🔍 Analyze Token</span>
-                        <div id="btnSpinner" class="spinner hidden"></div>
-                    </button>
-                    <p class="text-xs text-gray-500 mt-3 text-center">
-                        🔮 Chain auto-detected via DexScreener · ⚡ Results cached 5 min
-                    </p>
+            <div class="grid lg:grid-cols-2 gap-6">
+                <!-- Left: Input Form -->
+                <div class="space-y-6">
+                    <div class="bg-dark-800 rounded-xl p-6 border border-dark-600">
+                        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                            <span class="text-neon-green">🔍</span> Analyze Token
+                        </h2>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-2">Token Contract Address</label>
+                                <input type="text" id="tokenAddress" placeholder="0x..." 
+                                    class="w-full px-4 py-3 bg-dark-900 border border-dark-600 rounded-lg text-white font-mono text-sm focus:border-neon-green focus:outline-none transition">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">Chain</label>
+                                    <select id="chainSelect" class="w-full px-4 py-3 bg-dark-900 border border-dark-600 rounded-lg text-white text-sm focus:border-neon-green focus:outline-none">
+                                        <option value="0">🔍 Auto-Detect</option>
+                                        <option value="1">Ethereum (ETH)</option>
+                                        <option value="56">BSC (BNB)</option>
+                                        <option value="137">Polygon (MATIC)</option>
+                                        <option value="42161">Arbitrum (ETH)</option>
+                                        <option value="10">Optimism (ETH)</option>
+                                        <option value="43114">Avalanche (AVAX)</option>
+                                        <option value="8453">Base (ETH)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">Test Amount</label>
+                                    <input type="text" id="testAmount" value="0.1" 
+                                        class="w-full px-4 py-3 bg-dark-900 border border-dark-600 rounded-lg text-white text-sm focus:border-neon-green focus:outline-none">
+                                </div>
+                            </div>
+                            <button onclick="analyzeToken()" id="analyzeBtn"
+                                class="w-full py-3 bg-gradient-to-r from-neon-green to-neon-cyan text-dark-950 font-semibold rounded-lg hover:opacity-90 transition flex items-center justify-center gap-2">
+                                <span>🛡️</span> Analyze Token
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Live Simulation Log -->
+                    <div class="bg-dark-800 rounded-xl p-6 border border-dark-600">
+                        <h3 class="text-sm font-medium text-gray-400 mb-4 flex items-center gap-2">
+                            <span class="w-2 h-2 bg-neon-green rounded-full animate-pulse"></span>
+                            Live Simulation Log
+                        </h3>
+                        <div id="simulationLog" class="font-mono text-xs space-y-2 min-h-[160px]">
+                            <div class="simulation-step text-gray-500">Waiting for input...</div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Result Card -->
-            <div id="resultCard" class="max-w-2xl mx-auto mb-8 hidden">
-                <div id="resultContainer" class="rounded-2xl p-6 border transition-all duration-300"></div>
-            </div>
-
-            <!-- History -->
-            <div id="historySection" class="max-w-2xl mx-auto hidden">
-                <h3 class="text-lg font-semibold mb-4 text-gray-400">Recent Searches</h3>
-                <div id="historyList" class="space-y-2"></div>
+                <!-- Right: Results -->
+                <div id="resultsPanel" class="space-y-6">
+                    <!-- Placeholder -->
+                    <div class="bg-dark-800 rounded-xl p-8 border border-dark-600 text-center">
+                        <div class="text-6xl mb-4 opacity-30">🛡️</div>
+                        <p class="text-gray-500">Enter a token address to begin analysis</p>
+                        <p class="text-xs text-gray-600 mt-2">Supports 7 chains with auto-detection</p>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Documentation Tab -->
-        <div id="content-docs" class="hidden">
-            <div class="mb-12">
-                <h2 class="text-2xl font-bold mb-4">API Documentation</h2>
-                <p class="text-gray-400 mb-6">
-                    REST API for token risk analysis. Base URL: 
-                    <code class="bg-dark-700 px-2 py-1 rounded text-accent-green">https://yelling-patience-nirvagold-0a943e82.koyeb.app</code>
-                </p>
+        <!-- ============================================ -->
+        <!-- TAB: How It Works -->
+        <!-- ============================================ -->
+        <div id="content-how" class="tab-content hidden">
+            <div class="max-w-4xl mx-auto">
+                <!-- Hero Section -->
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold mb-4 bg-gradient-to-r from-neon-green to-neon-cyan bg-clip-text text-transparent">
+                        PERS Algorithm
+                    </h2>
+                    <p class="text-gray-400 text-lg">Pre-Execution Risk Scoring - Detect threats before you trade</p>
+                </div>
 
-                <!-- Risk Score Table -->
-                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 mb-8">
-                    <h3 class="text-lg font-semibold mb-4">Risk Score Levels</h3>
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="text-left text-gray-400 border-b border-dark-600">
-                                <th class="pb-3">Score</th>
-                                <th class="pb-3">Level</th>
-                                <th class="pb-3">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-gray-300">
-                            <tr class="border-b border-dark-700"><td class="py-2">0-20</td><td class="text-green-400">✅ SAFE</td><td>Trade freely</td></tr>
-                            <tr class="border-b border-dark-700"><td class="py-2">21-40</td><td class="text-yellow-400">🟡 LOW</td><td>Proceed with caution</td></tr>
-                            <tr class="border-b border-dark-700"><td class="py-2">41-60</td><td class="text-orange-400">🟠 MEDIUM</td><td>Review before trading</td></tr>
-                            <tr class="border-b border-dark-700"><td class="py-2">61-80</td><td class="text-red-400">🔴 HIGH</td><td>Likely to lose funds</td></tr>
-                            <tr><td class="py-2">81-100</td><td class="text-red-600">💀 CRITICAL</td><td>Do not trade</td></tr>
-                        </tbody>
-                    </table>
+                <!-- Algorithm Steps -->
+                <div class="grid md:grid-cols-4 gap-6 mb-12">
+                    <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 text-center">
+                        <div class="w-12 h-12 bg-neon-green/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span class="text-2xl">📡</span>
+                        </div>
+                        <h3 class="font-semibold mb-2">1. Fetch State</h3>
+                        <p class="text-sm text-gray-400">Pull live blockchain state via Alchemy RPC nodes</p>
+                    </div>
+                    <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 text-center">
+                        <div class="w-12 h-12 bg-neon-cyan/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span class="text-2xl">🧪</span>
+                        </div>
+                        <h3 class="font-semibold mb-2">2. Simulate</h3>
+                        <p class="text-sm text-gray-400">Execute buy/sell in REVM sandbox environment</p>
+                    </div>
+                    <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 text-center">
+                        <div class="w-12 h-12 bg-neon-purple/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span class="text-2xl">🔬</span>
+                        </div>
+                        <h3 class="font-semibold mb-2">3. Analyze</h3>
+                        <p class="text-sm text-gray-400">Calculate taxes, detect reverts, check access controls</p>
+                    </div>
+                    <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 text-center">
+                        <div class="w-12 h-12 bg-neon-yellow/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span class="text-2xl">📊</span>
+                        </div>
+                        <h3 class="font-semibold mb-2">4. Score</h3>
+                        <p class="text-sm text-gray-400">Generate 0-100 risk score with breakdown</p>
+                    </div>
+                </div>
+
+                <!-- Risk Score Breakdown -->
+                <div class="bg-dark-800 rounded-xl p-8 border border-dark-600 mb-8">
+                    <h3 class="text-xl font-semibold mb-6 text-center">Risk Score Components</h3>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                                <span class="text-sm">🍯 Honeypot Detection</span>
+                                <span class="text-neon-red font-mono">+95 pts</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                                <span class="text-sm">💸 Sell Tax &gt; 30%</span>
+                                <span class="text-neon-yellow font-mono">+60 pts</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                                <span class="text-sm">🔒 Access Control Functions</span>
+                                <span class="text-neon-yellow font-mono">+20 pts</span>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                                <span class="text-sm">⛔ Sell Reverted</span>
+                                <span class="text-neon-red font-mono">+100 pts</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                                <span class="text-sm">💰 Total Loss &gt; 50%</span>
+                                <span class="text-neon-red font-mono">+80 pts</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                                <span class="text-sm">✅ Clean Token</span>
+                                <span class="text-neon-green font-mono">10 pts</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Risk Levels -->
+                <div class="bg-dark-800 rounded-xl p-8 border border-dark-600">
+                    <h3 class="text-xl font-semibold mb-6 text-center">Risk Level Guide</h3>
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-4 p-3 rounded-lg bg-neon-green/10 border border-neon-green/30">
+                            <span class="w-16 text-center font-mono text-neon-green font-bold">0-20</span>
+                            <span class="font-semibold text-neon-green">SAFE</span>
+                            <span class="text-sm text-gray-400">Low risk, minimal taxes detected</span>
+                        </div>
+                        <div class="flex items-center gap-4 p-3 rounded-lg bg-neon-cyan/10 border border-neon-cyan/30">
+                            <span class="w-16 text-center font-mono text-neon-cyan font-bold">21-40</span>
+                            <span class="font-semibold text-neon-cyan">LOW</span>
+                            <span class="text-sm text-gray-400">Some taxes present, proceed with caution</span>
+                        </div>
+                        <div class="flex items-center gap-4 p-3 rounded-lg bg-neon-yellow/10 border border-neon-yellow/30">
+                            <span class="w-16 text-center font-mono text-neon-yellow font-bold">41-60</span>
+                            <span class="font-semibold text-neon-yellow">MEDIUM</span>
+                            <span class="text-sm text-gray-400">Significant taxes or suspicious patterns</span>
+                        </div>
+                        <div class="flex items-center gap-4 p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
+                            <span class="w-16 text-center font-mono text-orange-500 font-bold">61-80</span>
+                            <span class="font-semibold text-orange-500">HIGH</span>
+                            <span class="text-sm text-gray-400">High taxes or access control detected</span>
+                        </div>
+                        <div class="flex items-center gap-4 p-3 rounded-lg bg-neon-red/10 border border-neon-red/30">
+                            <span class="w-16 text-center font-mono text-neon-red font-bold">81-100</span>
+                            <span class="font-semibold text-neon-red">CRITICAL</span>
+                            <span class="text-sm text-gray-400">Honeypot confirmed or sell blocked</span>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Endpoints -->
-            <div class="space-y-8">
-                <!-- Health Check -->
-                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
-                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
-                        <span class="px-2 py-1 bg-green-900/50 text-green-400 rounded text-xs font-mono">GET</span>
-                        <code class="text-white">/v1/health</code>
-                    </div>
-                    <div class="p-4">
-                        <pre><code class="text-gray-300">curl https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/health</code></pre>
-                    </div>
+        <!-- ============================================ -->
+        <!-- TAB: Pricing -->
+        <!-- ============================================ -->
+        <div id="content-pricing" class="tab-content hidden">
+            <div class="max-w-5xl mx-auto">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold mb-4">Simple, Transparent Pricing</h2>
+                    <p class="text-gray-400">Start free, scale as you grow</p>
                 </div>
 
-                <!-- Honeypot Check -->
-                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
-                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
-                        <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
-                        <code class="text-white">/v1/honeypot/check</code>
-                        <span class="text-xs text-accent-green ml-2">🔮 Auto-detect chain</span>
+                <div class="grid md:grid-cols-3 gap-6">
+                    <!-- Free Tier -->
+                    <div class="bg-dark-800 rounded-xl p-8 border border-dark-600 relative">
+                        <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-neon-green text-dark-950 text-xs font-bold rounded-full">
+                            CURRENT
+                        </div>
+                        <div class="text-center mb-6">
+                            <h3 class="text-xl font-bold mb-2">Free</h3>
+                            <div class="text-4xl font-bold text-neon-green mb-2">$0</div>
+                            <p class="text-sm text-gray-400">Forever free</p>
+                        </div>
+                        <ul class="space-y-3 mb-8">
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-green">✓</span> 10 checks per day
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-green">✓</span> 7 chains supported
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-green">✓</span> Auto chain detection
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-green">✓</span> Risk score breakdown
+                            </li>
+                            <li class="flex items-center gap-2 text-sm text-gray-500">
+                                <span>✗</span> Public RPC (slower)
+                            </li>
+                        </ul>
+                        <button class="w-full py-3 bg-neon-green text-dark-950 font-semibold rounded-lg">
+                            Current Plan
+                        </button>
                     </div>
-                    <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Just send the token address - chain is auto-detected!</p>
-                        <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check \
-  -H "Content-Type: application/json" \
-  -d '{"token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"}'</code></pre>
-                        <p class="text-xs text-gray-500 mt-2">☝️ USDC on Base - chain auto-detected!</p>
-                    </div>
-                </div>
 
-                <!-- Batch Analysis -->
-                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
-                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
-                        <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
-                        <code class="text-white">/v1/analyze/batch</code>
+                    <!-- Pro Tier -->
+                    <div class="bg-dark-800 rounded-xl p-8 border border-neon-cyan/50 relative glow-safe">
+                        <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-neon-cyan text-dark-950 text-xs font-bold rounded-full">
+                            COMING SOON
+                        </div>
+                        <div class="text-center mb-6">
+                            <h3 class="text-xl font-bold mb-2">Pro</h3>
+                            <div class="text-4xl font-bold text-neon-cyan mb-2">$29</div>
+                            <p class="text-sm text-gray-400">per month</p>
+                        </div>
+                        <ul class="space-y-3 mb-8">
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-cyan">✓</span> Unlimited checks
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-cyan">✓</span> Priority Alchemy nodes
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-cyan">✓</span> Faster response time
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-cyan">✓</span> Batch analysis (100 tokens)
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-cyan">✓</span> API key access
+                            </li>
+                        </ul>
+                        <button class="w-full py-3 bg-dark-700 text-gray-400 font-semibold rounded-lg cursor-not-allowed">
+                            Coming Soon
+                        </button>
                     </div>
-                    <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Analyze up to 100 tokens in parallel.</p>
-                        <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/analyze/batch \
-  -H "Content-Type: application/json" \
-  -d '{"tokens": ["0xdAC17F958D2ee523a2206206994597C13D831ec7", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"]}'</code></pre>
-                    </div>
-                </div>
 
-                <!-- Stats -->
-                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
-                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
-                        <span class="px-2 py-1 bg-green-900/50 text-green-400 rounded text-xs font-mono">GET</span>
-                        <code class="text-white">/v1/stats</code>
-                    </div>
-                    <div class="p-4">
-                        <pre><code class="text-gray-300">curl https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/stats</code></pre>
+                    <!-- Enterprise Tier -->
+                    <div class="bg-dark-800 rounded-xl p-8 border border-neon-purple/50 relative">
+                        <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-neon-purple text-white text-xs font-bold rounded-full">
+                            ENTERPRISE
+                        </div>
+                        <div class="text-center mb-6">
+                            <h3 class="text-xl font-bold mb-2">Enterprise</h3>
+                            <div class="text-4xl font-bold text-neon-purple mb-2">Custom</div>
+                            <p class="text-sm text-gray-400">Contact us</p>
+                        </div>
+                        <ul class="space-y-3 mb-8">
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-purple">✓</span> Everything in Pro
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-purple">✓</span> Dedicated infrastructure
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-purple">✓</span> Custom integrations
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-purple">✓</span> Sniper bot API access
+                            </li>
+                            <li class="flex items-center gap-2 text-sm">
+                                <span class="text-neon-purple">✓</span> SLA guarantee
+                            </li>
+                        </ul>
+                        <button class="w-full py-3 bg-dark-700 text-gray-400 font-semibold rounded-lg cursor-not-allowed">
+                            Contact Sales
+                        </button>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Python Example -->
-            <div class="mt-12">
-                <h3 class="text-xl font-bold mb-4">Python Example</h3>
-                <div class="bg-dark-800 rounded-xl border border-dark-600 p-4">
-                    <pre><code class="text-gray-300">import requests
+        <!-- ============================================ -->
+        <!-- TAB: API Docs -->
+        <!-- ============================================ -->
+        <div id="content-docs" class="tab-content hidden">
+            <div class="max-w-4xl mx-auto">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold mb-4">API Documentation</h2>
+                    <p class="text-gray-400">Integrate Ruster Shield into your applications</p>
+                    <code class="inline-block mt-4 px-4 py-2 bg-dark-800 rounded-lg text-neon-green text-sm">
+                        Base URL: https://yelling-patience-nirvagold-0a943e82.koyeb.app
+                    </code>
+                </div>
 
-def check_honeypot(token_address: str) -> dict:
-    """Check any token - chain is auto-detected!"""
-    response = requests.post(
-        "https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check",
-        json={"token_address": token_address}
-    )
-    return response.json()
+                <!-- Endpoints -->
+                <div class="space-y-6">
+                    <!-- Health Check -->
+                    <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                        <div class="p-4 border-b border-dark-600 flex items-center gap-3">
+                            <span class="px-2 py-1 bg-neon-green/20 text-neon-green text-xs font-bold rounded">GET</span>
+                            <code class="text-sm">/health</code>
+                            <span class="text-gray-500 text-sm ml-auto">Health Check</span>
+                        </div>
+                        <div class="p-4">
+                            <p class="text-sm text-gray-400 mb-3">Check API status and version</p>
+                            <pre><code class="text-neon-green">{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "version": "0.1.0",
+    "uptime_seconds": 3600
+  }
+}</code></pre>
+                        </div>
+                    </div>
 
-# Works for ANY chain - no need to specify!
-result = check_honeypot("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # USDC on Base
+                    <!-- Honeypot Check -->
+                    <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                        <div class="p-4 border-b border-dark-600 flex items-center gap-3">
+                            <span class="px-2 py-1 bg-neon-cyan/20 text-neon-cyan text-xs font-bold rounded">POST</span>
+                            <code class="text-sm">/api/v1/honeypot</code>
+                            <span class="text-gray-500 text-sm ml-auto">Honeypot Detection</span>
+                        </div>
+                        <div class="p-4">
+                            <p class="text-sm text-gray-400 mb-3">Full honeypot analysis with tax breakdown</p>
+                            <div class="mb-4">
+                                <p class="text-xs text-gray-500 mb-2">Request Body:</p>
+                                <pre><code class="text-gray-300">{
+  "token_address": "0x...",
+  "chain_id": 0,        // 0 = auto-detect
+  "test_amount_eth": "0.1"
+}</code></pre>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500 mb-2">Response:</p>
+                                <pre><code class="text-neon-green">{
+  "success": true,
+  "data": {
+    "token_address": "0x...",
+    "token_name": "Example Token",
+    "token_symbol": "EXT",
+    "chain_id": 1,
+    "chain_name": "Ethereum",
+    "is_honeypot": false,
+    "risk_score": 15,
+    "buy_success": true,
+    "sell_success": true,
+    "buy_tax_percent": 2.5,
+    "sell_tax_percent": 2.5,
+    "total_loss_percent": 5.0,
+    "reason": "Token appears safe",
+    "simulation_latency_ms": 450
+  },
+  "latency_ms": 523.45
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
 
-if result["success"]:
-    data = result["data"]
-    print(f"Chain: {data['chain_name']}")  # Auto-detected: "Base"
-    print(f"Token: {data['token_symbol']}")
-    print(f"Honeypot: {data['is_honeypot']}")
-    print(f"Risk: {data['risk_score']}/100")</code></pre>
+                    <!-- Batch Analysis -->
+                    <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                        <div class="p-4 border-b border-dark-600 flex items-center gap-3">
+                            <span class="px-2 py-1 bg-neon-purple/20 text-neon-purple text-xs font-bold rounded">POST</span>
+                            <code class="text-sm">/api/v1/batch</code>
+                            <span class="text-gray-500 text-sm ml-auto">Batch Analysis</span>
+                        </div>
+                        <div class="p-4">
+                            <p class="text-sm text-gray-400 mb-3">Analyze up to 100 tokens in parallel</p>
+                            <div class="mb-4">
+                                <p class="text-xs text-gray-500 mb-2">Request Body:</p>
+                                <pre><code class="text-gray-300">{
+  "tokens": ["0x...", "0x...", "0x..."],
+  "chain_id": 1,
+  "concurrency": 10
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stats -->
+                    <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                        <div class="p-4 border-b border-dark-600 flex items-center gap-3">
+                            <span class="px-2 py-1 bg-neon-green/20 text-neon-green text-xs font-bold rounded">GET</span>
+                            <code class="text-sm">/api/v1/stats</code>
+                            <span class="text-gray-500 text-sm ml-auto">API Statistics</span>
+                        </div>
+                        <div class="p-4">
+                            <p class="text-sm text-gray-400 mb-3">Get API usage statistics and telemetry</p>
+                            <pre><code class="text-neon-green">{
+  "success": true,
+  "data": {
+    "total_analyzed": 15420,
+    "total_threats": 892,
+    "honeypots_detected": 234,
+    "total_value_protected_eth": 1250.5,
+    "avg_latency_ms": 380.2
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chain IDs Reference -->
+                <div class="mt-8 bg-dark-800 rounded-xl p-6 border border-dark-600">
+                    <h3 class="font-semibold mb-4">Supported Chain IDs</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-neon-green">1</div>
+                            <div class="text-xs text-gray-400">Ethereum</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-neon-yellow">56</div>
+                            <div class="text-xs text-gray-400">BSC</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-neon-purple">137</div>
+                            <div class="text-xs text-gray-400">Polygon</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-neon-blue">42161</div>
+                            <div class="text-xs text-gray-400">Arbitrum</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-neon-red">10</div>
+                            <div class="text-xs text-gray-400">Optimism</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-neon-red">43114</div>
+                            <div class="text-xs text-gray-400">Avalanche</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-neon-cyan">8453</div>
+                            <div class="text-xs text-gray-400">Base</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="font-mono text-gray-400">0</div>
+                            <div class="text-xs text-gray-400">Auto-Detect</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- Footer -->
-    <footer class="border-t border-dark-600 mt-16 py-8">
-        <div class="max-w-6xl mx-auto px-4 text-center text-gray-500 text-sm">
-            <p>Ruster Shield © 2026 | <a href="https://github.com/nirvagold/Rust-REVM" class="text-accent-green hover:underline">GitHub</a></p>
-            <p class="mt-2">⚠️ For educational purposes. Always DYOR before trading.</p>
+    <!-- Technical Specs Footer -->
+    <footer class="border-t border-dark-600 mt-16">
+        <div class="max-w-7xl mx-auto px-4 py-12">
+            <div class="text-center mb-8">
+                <h3 class="text-sm font-medium text-gray-400 mb-6">Powered By</h3>
+                <div class="flex flex-wrap justify-center items-center gap-8">
+                    <div class="tech-logo flex flex-col items-center gap-2">
+                        <svg class="w-10 h-10" viewBox="0 0 128 128"><path fill="#DEA584" d="M62.271 0c-2.463 2.129-4.016 4.891-5.39 7.773-1.47 3.08-2.75 6.255-4.313 9.26-1.197 2.303-2.793 4.39-4.39 6.39-1.47 1.84-3.09 3.56-4.61 5.35-.89 1.05-1.73 2.14-2.52 3.27-.79 1.13-1.52 2.31-2.19 3.52-.67 1.21-1.28 2.46-1.83 3.74-.55 1.28-1.04 2.59-1.47 3.92-.43 1.33-.8 2.69-1.11 4.06-.31 1.37-.56 2.76-.75 4.16-.19 1.4-.32 2.81-.39 4.23-.07 1.42-.08 2.84-.03 4.26.05 1.42.16 2.84.33 4.25.17 1.41.4 2.81.69 4.2.29 1.39.64 2.76 1.05 4.12.41 1.36.88 2.7 1.41 4.01.53 1.31 1.12 2.6 1.77 3.85.65 1.25 1.36 2.47 2.13 3.65.77 1.18 1.6 2.32 2.49 3.42.89 1.1 1.84 2.15 2.84 3.15 1 1 2.05 1.95 3.15 2.84 1.1.89 2.24 1.72 3.42 2.49 1.18.77 2.4 1.48 3.65 2.13 1.25.65 2.54 1.24 3.85 1.77 1.31.53 2.65 1 4.01 1.41 1.36.41 2.73.76 4.12 1.05 1.39.29 2.79.52 4.2.69 1.41.17 2.83.28 4.25.33 1.42.05 2.84.04 4.26-.03 1.42-.07 2.83-.2 4.23-.39 1.4-.19 2.79-.44 4.16-.75 1.37-.31 2.73-.68 4.06-1.11 1.33-.43 2.64-.92 3.92-1.47 1.28-.55 2.53-1.16 3.74-1.83 1.21-.67 2.39-1.4 3.52-2.19 1.13-.79 2.22-1.63 3.27-2.52 1.79-1.52 3.51-3.14 5.35-4.61 2-1.597 4.087-3.193 6.39-4.39 3.005-1.563 6.18-2.843 9.26-4.313 2.882-1.374 5.644-2.927 7.773-5.39-2.129-2.463-4.891-4.016-7.773-5.39-3.08-1.47-6.255-2.75-9.26-4.313-2.303-1.197-4.39-2.793-6.39-4.39-1.84-1.47-3.56-3.09-5.35-4.61-1.05-.89-2.14-1.73-3.27-2.52-1.13-.79-2.31-1.52-3.52-2.19-1.21-.67-2.46-1.28-3.74-1.83-1.28-.55-2.59-1.04-3.92-1.47-1.33-.43-2.69-.8-4.06-1.11-1.37-.31-2.76-.56-4.16-.75-1.4-.19-2.81-.32-4.23-.39-1.42-.07-2.84-.08-4.26-.03-1.42.05-2.84.16-4.25.33-1.41.17-2.81.4-4.2.69-1.39.29-2.76.64-4.12 1.05-1.36.41-2.7.88-4.01 1.41-1.31.53-2.6 1.12-3.85 1.77-1.25.65-2.47 1.36-3.65 2.13-1.18.77-2.32 1.6-3.42 2.49-1.1.89-2.15 1.84-3.15 2.84-1 1-1.95 2.05-2.84 3.15-.89 1.1-1.72 2.24-2.49 3.42-.77 1.18-1.48 2.4-2.13 3.65-.65 1.25-1.24 2.54-1.77 3.85-.53 1.31-1 2.65-1.41 4.01-.41 1.36-.76 2.73-1.05 4.12-.29 1.39-.52 2.79-.69 4.2-.17 1.41-.28 2.83-.33 4.25-.05 1.42-.04 2.84.03 4.26.07 1.42.2 2.83.39 4.23.19 1.4.44 2.79.75 4.16.31 1.37.68 2.73 1.11 4.06.43 1.33.92 2.64 1.47 3.92.55 1.28 1.16 2.53 1.83 3.74.67 1.21 1.4 2.39 2.19 3.52.79 1.13 1.63 2.22 2.52 3.27 1.52 1.79 3.14 3.51 4.61 5.35 1.597 2 3.193 4.087 4.39 6.39 1.563 3.005 2.843 6.18 4.313 9.26 1.374 2.882 2.927 5.644 5.39 7.773 2.463-2.129 4.016-4.891 5.39-7.773 1.47-3.08 2.75-6.255 4.313-9.26 1.197-2.303 2.793-4.39 4.39-6.39 1.47-1.84 3.09-3.56 4.61-5.35.89-1.05 1.73-2.14 2.52-3.27.79-1.13 1.52-2.31 2.19-3.52.67-1.21 1.28-2.46 1.83-3.74.55-1.28 1.04-2.59 1.47-3.92.43-1.33.8-2.69 1.11-4.06.31-1.37.56-2.76.75-4.16.19-1.4.32-2.81.39-4.23.07-1.42.08-2.84.03-4.26-.05-1.42-.16-2.84-.33-4.25-.17-1.41-.4-2.81-.69-4.2-.29-1.39-.64-2.76-1.05-4.12-.41-1.36-.88-2.7-1.41-4.01-.53-1.31-1.12-2.6-1.77-3.85-.65-1.25-1.36-2.47-2.13-3.65-.77-1.18-1.6-2.32-2.49-3.42-.89-1.1-1.84-2.15-2.84-3.15-1-1-2.05-1.95-3.15-2.84-1.1-.89-2.24-1.72-3.42-2.49-1.18-.77-2.4-1.48-3.65-2.13-1.25-.65-2.54-1.24-3.85-1.77-1.31-.53-2.65-1-4.01-1.41-1.36-.41-2.73-.76-4.12-1.05-1.39-.29-2.79-.52-4.2-.69-1.41-.17-2.83-.28-4.25-.33-1.42-.05-2.84-.04-4.26.03-1.42.07-2.83.2-4.23.39-1.4.19-2.79.44-4.16.75-1.37.31-2.73.68-4.06 1.11-1.33.43-2.64.92-3.92 1.47-1.28.55-2.53 1.16-3.74 1.83-1.21.67-2.39 1.4-3.52 2.19-1.13.79-2.22 1.63-3.27 2.52-1.79 1.52-3.51 3.14-5.35 4.61-2 1.597-4.087 3.193-6.39 4.39-3.005 1.563-6.18 2.843-9.26 4.313-2.882 1.374-5.644 2.927-7.773 5.39z"/></svg>
+                        <span class="text-xs text-gray-500">Rust</span>
+                    </div>
+                    <div class="tech-logo flex flex-col items-center gap-2">
+                        <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">REVM</div>
+                        <span class="text-xs text-gray-500">REVM</span>
+                    </div>
+                    <div class="tech-logo flex flex-col items-center gap-2">
+                        <svg class="w-10 h-10" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="#0052FF"/><path d="M20 8c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm0 18.5c-3.59 0-6.5-2.91-6.5-6.5s2.91-6.5 6.5-6.5 6.5 2.91 6.5 6.5-2.91 6.5-6.5 6.5z" fill="white"/></svg>
+                        <span class="text-xs text-gray-500">Alchemy</span>
+                    </div>
+                    <div class="tech-logo flex flex-col items-center gap-2">
+                        <div class="w-10 h-10 bg-gradient-to-br from-green-400 to-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-xs">DEX</div>
+                        <span class="text-xs text-gray-500">DexScreener</span>
+                    </div>
+                </div>
+            </div>
+            <div class="text-center text-sm text-gray-500">
+                <p>© 2025 Ruster Shield. Built with 🦀 Rust for maximum performance.</p>
+                <p class="mt-2">
+                    <a href="https://github.com/nirvagold/Rust-REVM" class="text-neon-green hover:underline">GitHub</a>
+                    <span class="mx-2">•</span>
+                    <a href="#" class="hover:text-white">Documentation</a>
+                    <span class="mx-2">•</span>
+                    <a href="#" class="hover:text-white">Support</a>
+                </p>
+            </div>
         </div>
     </footer>
 
     <script>
-        const API_URL = 'https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check';
-        let searchHistory = [];
+        const API_BASE = 'https://yelling-patience-nirvagold-0a943e82.koyeb.app';
 
-        function showTab(tab) {
-            document.getElementById('content-tester').classList.toggle('hidden', tab !== 'tester');
-            document.getElementById('content-docs').classList.toggle('hidden', tab !== 'docs');
-            document.getElementById('tab-tester').classList.toggle('tab-active', tab === 'tester');
-            document.getElementById('tab-docs').classList.toggle('tab-active', tab === 'docs');
-            document.getElementById('tab-tester').classList.toggle('text-gray-400', tab !== 'tester');
-            document.getElementById('tab-docs').classList.toggle('text-gray-400', tab !== 'docs');
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                el.classList.remove('tab-active');
+                el.classList.add('text-gray-400');
+            });
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            document.getElementById(`tab-${tabName}`).classList.add('tab-active');
+            document.getElementById(`tab-${tabName}`).classList.remove('text-gray-400');
         }
 
-        async function analyzeToken() {
-            const input = document.getElementById('tokenInput');
-            const btn = document.getElementById('analyzeBtn');
-            const btnText = document.getElementById('btnText');
-            const btnSpinner = document.getElementById('btnSpinner');
-            const address = input.value.trim();
+        // Simulation log steps
+        const simulationSteps = [
+            { text: '🔍 Validating token address...', delay: 200 },
+            { text: '📡 Connecting to RPC node...', delay: 400 },
+            { text: '🔗 Detecting chain via DexScreener...', delay: 600 },
+            { text: '📦 Fetching contract bytecode...', delay: 800 },
+            { text: '🧪 Initializing REVM sandbox...', delay: 300 },
+            { text: '💰 Simulating BUY transaction...', delay: 1000 },
+            { text: '💸 Simulating SELL transaction...', delay: 1000 },
+            { text: '🔬 Analyzing tax structure...', delay: 400 },
+            { text: '🔒 Checking access controls...', delay: 300 },
+            { text: '📊 Calculating risk score...', delay: 200 },
+        ];
+
+        async function animateSimulationLog() {
+            const logEl = document.getElementById('simulationLog');
+            logEl.innerHTML = '';
             
-            if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-                showError('Invalid address format. Must be 0x followed by 40 hex characters.');
+            for (let i = 0; i < simulationSteps.length; i++) {
+                const step = simulationSteps[i];
+                const stepEl = document.createElement('div');
+                stepEl.className = 'simulation-step';
+                stepEl.innerHTML = `<span class="text-gray-500">[${String(i+1).padStart(2, '0')}]</span> ${step.text}`;
+                logEl.appendChild(stepEl);
+                
+                await new Promise(r => setTimeout(r, 100));
+                stepEl.classList.add('active');
+                await new Promise(r => setTimeout(r, step.delay));
+                stepEl.classList.remove('active');
+                stepEl.classList.add('completed');
+            }
+        }
+
+        function showSimulationError(message) {
+            const logEl = document.getElementById('simulationLog');
+            const errorEl = document.createElement('div');
+            errorEl.className = 'simulation-step failed';
+            errorEl.innerHTML = `<span class="text-neon-red">[ERROR]</span> ${message}`;
+            logEl.appendChild(errorEl);
+            setTimeout(() => errorEl.classList.add('active'), 100);
+        }
+
+        function showSimulationSuccess() {
+            const logEl = document.getElementById('simulationLog');
+            const successEl = document.createElement('div');
+            successEl.className = 'simulation-step';
+            successEl.innerHTML = `<span class="text-neon-green">[DONE]</span> ✅ Analysis complete!`;
+            logEl.appendChild(successEl);
+            setTimeout(() => successEl.classList.add('completed'), 100);
+        }
+
+        // Risk color helper
+        function getRiskColor(score) {
+            if (score <= 20) return { color: '#10b981', level: 'SAFE', bg: 'bg-neon-green' };
+            if (score <= 40) return { color: '#06b6d4', level: 'LOW', bg: 'bg-neon-cyan' };
+            if (score <= 60) return { color: '#f59e0b', level: 'MEDIUM', bg: 'bg-neon-yellow' };
+            if (score <= 80) return { color: '#f97316', level: 'HIGH', bg: 'bg-orange-500' };
+            return { color: '#ef4444', level: 'CRITICAL', bg: 'bg-neon-red' };
+        }
+
+        // Main analyze function
+        async function analyzeToken() {
+            const tokenAddress = document.getElementById('tokenAddress').value.trim();
+            const chainId = parseInt(document.getElementById('chainSelect').value);
+            const testAmount = document.getElementById('testAmount').value || '0.1';
+            const btn = document.getElementById('analyzeBtn');
+            const resultsPanel = document.getElementById('resultsPanel');
+
+            if (!tokenAddress || !tokenAddress.startsWith('0x')) {
+                alert('Please enter a valid token address starting with 0x');
                 return;
             }
 
+            // Disable button
             btn.disabled = true;
-            btnText.textContent = '🔮 Detecting chain...';
-            btnSpinner.classList.remove('hidden');
+            btn.innerHTML = '<div class="spinner"></div> Analyzing...';
+
+            // Start simulation animation
+            const animationPromise = animateSimulationLog();
 
             try {
-                const response = await fetch(API_URL, {
+                const response = await fetch(`${API_BASE}/api/v1/honeypot`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token_address: address })
+                    body: JSON.stringify({
+                        token_address: tokenAddress,
+                        chain_id: chainId,
+                        test_amount_eth: testAmount
+                    })
                 });
-                const result = await response.json();
-                
-                if (result.success && result.data) {
-                    displayResult(result.data, address);
-                    addToHistory(address, result.data);
+
+                await animationPromise;
+                const data = await response.json();
+
+                if (data.success && data.data) {
+                    showSimulationSuccess();
+                    renderResults(data.data);
                 } else {
-                    showError(result.error?.message || 'Analysis failed');
+                    showSimulationError(data.error?.message || 'Analysis failed');
+                    resultsPanel.innerHTML = `
+                        <div class="bg-dark-800 rounded-xl p-6 border border-neon-red/50 glow-danger">
+                            <div class="text-center">
+                                <div class="text-4xl mb-4">❌</div>
+                                <h3 class="text-lg font-semibold text-neon-red mb-2">Analysis Failed</h3>
+                                <p class="text-gray-400 text-sm">${data.error?.message || 'Unknown error occurred'}</p>
+                            </div>
+                        </div>
+                    `;
                 }
-            } catch (err) {
-                showError('Network error: ' + err.message);
-            } finally {
-                btn.disabled = false;
-                btnText.textContent = '🔍 Analyze Token';
-                btnSpinner.classList.add('hidden');
-            }
-        }
-
-        function displayResult(data, address) {
-            const resultCard = document.getElementById('resultCard');
-            const resultContainer = document.getElementById('resultContainer');
-            
-            const isHoneypot = data.is_honeypot || false;
-            const riskScore = data.risk_score || 0;
-            const buyTax = data.buy_tax_percent || 0;
-            const sellTax = data.sell_tax_percent || 0;
-            const totalLoss = data.total_loss_percent || 0;
-            const buySuccess = data.buy_success !== false;
-            const sellSuccess = data.sell_success !== false;
-            const reason = data.reason || '';
-            const tokenName = data.token_name || null;
-            const tokenSymbol = data.token_symbol || null;
-            const tokenDecimals = data.token_decimals || null;
-            const chainName = data.chain_name || 'Unknown';
-            const nativeSymbol = data.native_symbol || 'ETH';
-            const chainId = data.chain_id || 1;
-
-            // Check if it's a "no liquidity" case
-            const noLiquidity = reason.toLowerCase().includes('no liquidity') || 
-                               reason.toLowerCase().includes('no pair') ||
-                               (!buySuccess && !sellSuccess && !isHoneypot);
-            
-            // Check if it's V3-only (not supported)
-            const isV3Only = reason.toLowerCase().includes('v3') || 
-                            reason.toLowerCase().includes('velodrome') ||
-                            reason.toLowerCase().includes('not supported yet');
-
-            // Get chain emoji
-            const chainEmoji = {1:'🔷',56:'🟡',137:'🟣',42161:'🔵',10:'🔴',43114:'🔺',8453:'🔵'}[chainId] || '🔗';
-
-            let status, statusColor, bgClass, glowClass;
-            
-            // Priority: Honeypot > V3-Only > No Liquidity > Risk Score
-            if (isHoneypot) {
-                status = '🚨 HONEYPOT DETECTED';
-                statusColor = 'text-accent-red';
-                bgClass = 'bg-red-900/20 border-accent-red/50';
-                glowClass = 'glow-danger';
-            } else if (isV3Only) {
-                status = '⚠️ V3 ONLY (Not Supported)';
-                statusColor = 'text-accent-blue';
-                bgClass = 'bg-blue-900/20 border-accent-blue/50';
-                glowClass = '';
-            } else if (noLiquidity) {
-                status = '❓ NO LIQUIDITY';
-                statusColor = 'text-gray-400';
-                bgClass = 'bg-gray-900/20 border-gray-600';
-                glowClass = '';
-            } else if (riskScore >= 80) {
-                status = '🚨 CRITICAL RISK';
-                statusColor = 'text-accent-red';
-                bgClass = 'bg-red-900/20 border-accent-red/50';
-                glowClass = 'glow-danger';
-            } else if (riskScore >= 50 || totalLoss > 30) {
-                status = '⚠️ HIGH RISK';
-                statusColor = 'text-accent-yellow';
-                bgClass = 'bg-yellow-900/20 border-accent-yellow/50';
-                glowClass = '';
-            } else if (riskScore >= 30 || totalLoss > 10) {
-                status = '⚠️ MEDIUM RISK';
-                statusColor = 'text-accent-yellow';
-                bgClass = 'bg-yellow-900/20 border-accent-yellow/50';
-                glowClass = '';
-            } else {
-                status = '✅ SAFE TO TRADE';
-                statusColor = 'text-accent-green';
-                bgClass = 'bg-green-900/20 border-accent-green/50';
-                glowClass = 'glow-safe';
-            }
-
-            const tokenDisplay = tokenName && tokenSymbol 
-                ? `<p class="text-xl font-semibold text-white">${tokenName} <span class="text-accent-blue">(${tokenSymbol})</span></p>` 
-                : tokenSymbol 
-                    ? `<p class="text-xl font-semibold text-accent-blue">${tokenSymbol}</p>`
-                    : '';
-            const chainBadge = `<span class="inline-block px-3 py-1 bg-dark-700 rounded-full text-sm text-gray-300 mt-2">${chainEmoji} ${chainName} (${nativeSymbol})</span>`;
-            const decimalsDisplay = tokenDecimals !== null ? ` · ${tokenDecimals} decimals` : '';
-
-            resultContainer.className = `rounded-2xl p-6 border transition-all duration-300 ${bgClass} ${glowClass}`;
-            resultContainer.innerHTML = `
-                <div class="text-center mb-6">
-                    <h3 class="text-2xl font-bold ${statusColor}">${status}</h3>
-                    ${tokenDisplay}
-                    <p class="text-gray-400 text-sm mt-1 font-mono">${address.slice(0,10)}...${address.slice(-8)}${decimalsDisplay}</p>
-                    ${chainBadge}
-                </div>
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="bg-dark-800/50 rounded-xl p-4 text-center">
-                        <p class="text-gray-400 text-sm">Risk Score</p>
-                        <p class="text-3xl font-bold ${riskScore >= 50 ? 'text-accent-red' : 'text-accent-green'}">${riskScore}</p>
-                        <div class="w-full bg-dark-600 rounded-full h-2 mt-2">
-                            <div class="h-2 rounded-full ${riskScore >= 50 ? 'bg-accent-red' : 'bg-accent-green'}" style="width: ${riskScore}%"></div>
+            } catch (error) {
+                await animationPromise;
+                showSimulationError(error.message);
+                resultsPanel.innerHTML = `
+                    <div class="bg-dark-800 rounded-xl p-6 border border-neon-red/50">
+                        <div class="text-center">
+                            <div class="text-4xl mb-4">🔌</div>
+                            <h3 class="text-lg font-semibold text-neon-red mb-2">Connection Error</h3>
+                            <p class="text-gray-400 text-sm">${error.message}</p>
                         </div>
                     </div>
-                    <div class="bg-dark-800/50 rounded-xl p-4 text-center">
-                        <p class="text-gray-400 text-sm">Honeypot</p>
-                        <p class="text-3xl font-bold ${isHoneypot ? 'text-accent-red' : 'text-accent-green'}">${isHoneypot ? 'YES' : 'NO'}</p>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>🛡️</span> Analyze Token';
+            }
+        }
+
+        function renderResults(data) {
+            const resultsPanel = document.getElementById('resultsPanel');
+            const risk = getRiskColor(data.risk_score);
+            const isHoneypot = data.is_honeypot;
+            const glowClass = isHoneypot ? 'glow-danger' : (data.risk_score <= 40 ? 'glow-safe' : '');
+            const borderColor = isHoneypot ? 'border-neon-red/50' : (data.risk_score <= 40 ? 'border-neon-green/50' : 'border-neon-yellow/50');
+
+            resultsPanel.innerHTML = `
+                <!-- Risk Score Card -->
+                <div class="bg-dark-800 rounded-xl p-6 border ${borderColor} ${glowClass} animate-fadeIn">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-lg font-semibold">${data.token_symbol || 'Unknown'}</h3>
+                            <p class="text-sm text-gray-400">${data.token_name || 'Unknown Token'}</p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-3xl font-bold" style="color: ${risk.color}">${data.risk_score}</div>
+                            <div class="text-xs font-semibold px-2 py-1 rounded ${risk.bg}/20" style="color: ${risk.color}">${risk.level}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Risk Bar -->
+                    <div class="risk-bar mb-4">
+                        <div class="risk-bar-fill" style="width: ${data.risk_score}%; background: ${risk.color}"></div>
+                    </div>
+
+                    <!-- Honeypot Status -->
+                    <div class="p-4 rounded-lg mb-4 ${isHoneypot ? 'bg-neon-red/10 border border-neon-red/30' : 'bg-neon-green/10 border border-neon-green/30'}">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">${isHoneypot ? '🍯' : '✅'}</span>
+                            <div>
+                                <div class="font-semibold ${isHoneypot ? 'text-neon-red' : 'text-neon-green'}">
+                                    ${isHoneypot ? 'HONEYPOT DETECTED' : 'NOT A HONEYPOT'}
+                                </div>
+                                <div class="text-xs text-gray-400">${data.reason}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chain Info -->
+                    <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
+                        <span class="px-2 py-1 bg-dark-700 rounded text-xs">${data.chain_name}</span>
+                        <span class="text-gray-600">•</span>
+                        <span class="font-mono text-xs">${data.token_address.slice(0, 10)}...${data.token_address.slice(-8)}</span>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-3">
-                    <div class="bg-dark-800/50 rounded-xl p-3 text-center">
-                        <p class="text-gray-400 text-xs">Buy Tax</p>
-                        <p class="text-lg font-semibold ${buyTax > 10 ? 'text-accent-yellow' : 'text-white'}">${buyTax.toFixed(2)}%</p>
-                    </div>
-                    <div class="bg-dark-800/50 rounded-xl p-3 text-center">
-                        <p class="text-gray-400 text-xs">Sell Tax</p>
-                        <p class="text-lg font-semibold ${sellTax > 10 ? 'text-accent-red' : 'text-white'}">${sellTax.toFixed(2)}%</p>
-                    </div>
-                    <div class="bg-dark-800/50 rounded-xl p-3 text-center">
-                        <p class="text-gray-400 text-xs">Total Loss</p>
-                        <p class="text-lg font-semibold ${totalLoss > 10 ? 'text-accent-yellow' : 'text-white'}">${totalLoss.toFixed(2)}%</p>
+
+                <!-- Tax Breakdown Card -->
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 animate-fadeIn" style="animation-delay: 0.1s">
+                    <h4 class="font-semibold mb-4 flex items-center gap-2">
+                        <span>💸</span> Tax Breakdown
+                    </h4>
+                    <div class="space-y-4">
+                        <div class="risk-breakdown-item">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-sm text-gray-400">Buy Tax</span>
+                                <span class="font-mono ${data.buy_tax_percent > 10 ? 'text-neon-yellow' : 'text-neon-green'}">${data.buy_tax_percent.toFixed(2)}%</span>
+                            </div>
+                            <div class="risk-bar">
+                                <div class="risk-bar-fill" style="width: ${Math.min(data.buy_tax_percent, 100)}%; background: ${data.buy_tax_percent > 10 ? '#f59e0b' : '#10b981'}"></div>
+                            </div>
+                        </div>
+                        <div class="risk-breakdown-item">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-sm text-gray-400">Sell Tax</span>
+                                <span class="font-mono ${data.sell_tax_percent > 10 ? 'text-neon-red' : 'text-neon-green'}">${data.sell_tax_percent.toFixed(2)}%</span>
+                            </div>
+                            <div class="risk-bar">
+                                <div class="risk-bar-fill" style="width: ${Math.min(data.sell_tax_percent, 100)}%; background: ${data.sell_tax_percent > 10 ? '#ef4444' : '#10b981'}"></div>
+                            </div>
+                        </div>
+                        <div class="risk-breakdown-item">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-sm text-gray-400">Total Loss</span>
+                                <span class="font-mono ${data.total_loss_percent > 20 ? 'text-neon-red' : 'text-neon-green'}">${data.total_loss_percent.toFixed(2)}%</span>
+                            </div>
+                            <div class="risk-bar">
+                                <div class="risk-bar-fill" style="width: ${Math.min(data.total_loss_percent, 100)}%; background: ${data.total_loss_percent > 20 ? '#ef4444' : '#10b981'}"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                ${reason ? `<p class="text-gray-400 text-sm mt-4 text-center italic">"${reason}"</p>` : ''}
+
+                <!-- Simulation Details -->
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 animate-fadeIn" style="animation-delay: 0.2s">
+                    <h4 class="font-semibold mb-4 flex items-center gap-2">
+                        <span>🧪</span> Simulation Results
+                    </h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="text-2xl mb-1">${data.buy_success ? '✅' : '❌'}</div>
+                            <div class="text-xs text-gray-400">Buy</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="text-2xl mb-1">${data.sell_success ? '✅' : '❌'}</div>
+                            <div class="text-xs text-gray-400">Sell</div>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-dark-600 flex justify-between text-sm">
+                        <span class="text-gray-400">Latency</span>
+                        <span class="font-mono text-neon-cyan">${data.simulation_latency_ms}ms</span>
+                    </div>
+                </div>
             `;
-            resultCard.classList.remove('hidden');
         }
-
-        function showError(message) {
-            const resultCard = document.getElementById('resultCard');
-            const resultContainer = document.getElementById('resultContainer');
-            resultContainer.className = 'rounded-2xl p-6 border bg-red-900/20 border-accent-red/50';
-            resultContainer.innerHTML = `<div class="text-center"><h3 class="text-xl font-bold text-accent-red">❌ Error</h3><p class="text-gray-400 mt-2">${message}</p></div>`;
-            resultCard.classList.remove('hidden');
-        }
-
-        function addToHistory(address, data) {
-            searchHistory.unshift({ address, data });
-            if (searchHistory.length > 5) searchHistory.pop();
-            renderHistory();
-        }
-
-        function renderHistory() {
-            const section = document.getElementById('historySection');
-            const list = document.getElementById('historyList');
-            if (searchHistory.length === 0) { section.classList.add('hidden'); return; }
-            section.classList.remove('hidden');
-            const chainEmojis = {1:'🔷',56:'🟡',137:'🟣',42161:'🔵',10:'🔴',43114:'🔺',8453:'🔵'};
-            list.innerHTML = searchHistory.map(item => {
-                const isHoneypot = item.data.is_honeypot || false;
-                const riskScore = item.data.risk_score || 0;
-                const reason = item.data.reason || '';
-                const noLiquidity = reason.toLowerCase().includes('no liquidity') || reason.toLowerCase().includes('no pair');
-                const symbol = item.data.token_symbol || null;
-                const chainName = item.data.chain_name || 'Unknown';
-                const chainId = item.data.chain_id || 1;
-                const chainEmoji = chainEmojis[chainId] || '🔗';
-                const icon = isHoneypot ? '🚨' : noLiquidity ? '❓' : riskScore >= 50 ? '⚠️' : '✅';
-                const cls = isHoneypot ? 'text-accent-red' : noLiquidity ? 'text-gray-400' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
-                const displayName = symbol ? `<span class="text-accent-blue font-semibold">${symbol}</span>` : `<span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span>`;
-                const chainBadge = `<span class="text-xs text-gray-500 ml-2">${chainEmoji} ${chainName}</span>`;
-                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span>${displayName}${chainBadge}</div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
-            }).join('');
-        }
-
-        document.getElementById('tokenInput').addEventListener('keypress', e => { if (e.key === 'Enter') analyzeToken(); });
     </script>
 </body>
 </html>
