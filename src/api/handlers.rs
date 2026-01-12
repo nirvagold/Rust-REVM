@@ -26,11 +26,26 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(telemetry: Arc<TelemetryCollector>) -> Self {
+        let cache = Arc::new(HoneypotCache::new());
+        
+        // Background task: cleanup expired cache entries every 60 seconds
+        let cache_clone = cache.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let removed = cache_clone.cleanup_expired();
+                if removed > 0 {
+                    tracing::info!("🧹 Cache cleanup: {} expired entries removed", removed);
+                }
+            }
+        });
+
         Self {
             telemetry,
-            cache: Arc::new(HoneypotCache::new()),
+            cache,
             start_time: Instant::now(),
-            batch_semaphore: Arc::new(Semaphore::new(100)), // Max 100 concurrent batch items
+            batch_semaphore: Arc::new(Semaphore::new(100)),
         }
     }
 
