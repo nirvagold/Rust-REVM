@@ -33,6 +33,11 @@ sol! {
     function balanceOf(address account) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function transfer(address to, uint256 amount) external returns (bool);
+    
+    // ERC20 metadata
+    function name() external view returns (string);
+    function symbol() external view returns (string);
+    function decimals() external view returns (uint8);
 
     // Uniswap V2 Router
     function swapExactETHForTokens(
@@ -54,6 +59,15 @@ sol! {
         uint256 amountIn,
         address[] calldata path
     ) external view returns (uint256[] memory amounts);
+}
+
+/// Token metadata (name, symbol, decimals)
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct TokenInfo {
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub decimals: Option<u8>,
 }
 
 /// Result of honeypot detection
@@ -163,10 +177,14 @@ impl HoneypotResult {
 #[allow(dead_code)]
 pub struct HoneypotDetector {
     /// Chain ID (1 = mainnet)
-    chain_id: u64,
-    /// WETH address
+    pub chain_id: u64,
+    /// Chain name (e.g., "Ethereum", "BNB Smart Chain")
+    pub chain_name: String,
+    /// Native token symbol (e.g., "ETH", "BNB")
+    pub native_symbol: String,
+    /// WETH/WBNB address
     weth: Address,
-    /// Uniswap V2 Router address
+    /// DEX Router address
     router: Address,
     /// HTTP RPC URL for fetching bytecode
     rpc_url: String,
@@ -181,20 +199,29 @@ enum SimSellResult {
 impl HoneypotDetector {
     /// Create detector for Ethereum mainnet
     pub fn mainnet() -> Self {
-        Self {
+        Self::for_chain(1).unwrap_or_else(|| Self {
             chain_id: 1,
-            // WETH on mainnet
-            weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-                .parse()
-                .unwrap(),
-            // Uniswap V2 Router
-            router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
-                .parse()
-                .unwrap(),
-            // Get RPC URL from environment
+            chain_name: "Ethereum".to_string(),
+            native_symbol: "ETH".to_string(),
+            weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".parse().unwrap(),
+            router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap(),
             rpc_url: std::env::var("ETH_HTTP_URL")
                 .unwrap_or_else(|_| "https://eth.llamarpc.com".to_string()),
-        }
+        })
+    }
+
+    /// Create detector for specific chain
+    pub fn for_chain(chain_id: u64) -> Option<Self> {
+        use crate::config::ChainConfig;
+        
+        ChainConfig::get(chain_id).map(|config| Self {
+            chain_id: config.chain_id as u64,
+            chain_name: config.name,
+            native_symbol: config.symbol,
+            weth: config.weth,
+            router: config.router,
+            rpc_url: config.rpc_url,
+        })
     }
 
     /// Create detector with custom addresses
@@ -202,6 +229,8 @@ impl HoneypotDetector {
     pub fn new(chain_id: u64, weth: Address, router: Address) -> Self {
         Self {
             chain_id,
+            chain_name: "Custom".to_string(),
+            native_symbol: "ETH".to_string(),
             weth,
             router,
             rpc_url: std::env::var("ETH_HTTP_URL")
@@ -388,7 +417,7 @@ impl HoneypotDetector {
         self.eth_call(self.router, Bytes::from(calldata)).await
     }
 
-    /// Execute eth_call on RPC
+    /// Execute eth_call on RPC (returns U256)
     #[allow(dead_code)]
     async fn eth_call(&self, to: Address, data: Bytes) -> Result<U256> {
         let client = reqwest::Client::new();
@@ -436,6 +465,105 @@ impl HoneypotDetector {
         } else {
             Err(eyre!("Response too short"))
         }
+    }
+
+    /// Execute eth_call on RPC (returns raw bytes)
+    #[allow(dead_code)]
+    async fn eth_call_raw(&self, to: Address, data: Bytes) -> Result<Vec<u8>> {
+        let client = reqwest::Client::new();
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "eth_call",
+            "params": [{
+                "to": format!("{:?}", to),
+                "data": format!("0x{}", hex::encode(&data))
+            }, "latest"],
+            "id": 1
+        });
+
+        let response = client.post(&self.rpc_url)
+            .json(&payload)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|e| eyre!("RPC request failed: {}", e))?;
+
+        let json: serde_json::Value = response.json().await
+            .map_err(|e| eyre!("Failed to parse response: {}", e))?;
+
+        if let Some(error) = json.get("error") {
+            return Err(eyre!("RPC error: {}", error));
+        }
+
+        let result = json.get("result")
+            .and_then(|r| r.as_str())
+            .ok_or_else(|| eyre!("No result in response"))?;
+
+        if result == "0x" || result.len() < 4 {
+            return Err(eyre!("Empty response"));
+        }
+
+        hex::decode(&result[2..])
+            .map_err(|e| eyre!("Failed to decode hex: {}", e))
+    }
+
+    /// Fetch token metadata (name, symbol, decimals) from ERC20 contract
+    #[allow(dead_code)]
+    pub async fn fetch_token_info(&self, token: Address) -> TokenInfo {
+        let mut info = TokenInfo::default();
+
+        // Fetch name
+        let name_calldata = nameCall {}.abi_encode();
+        if let Ok(bytes) = self.eth_call_raw(token, Bytes::from(name_calldata)).await {
+            if let Some(name) = Self::decode_string(&bytes) {
+                info.name = Some(name);
+            }
+        }
+
+        // Fetch symbol
+        let symbol_calldata = symbolCall {}.abi_encode();
+        if let Ok(bytes) = self.eth_call_raw(token, Bytes::from(symbol_calldata)).await {
+            if let Some(symbol) = Self::decode_string(&bytes) {
+                info.symbol = Some(symbol);
+            }
+        }
+
+        // Fetch decimals
+        let decimals_calldata = decimalsCall {}.abi_encode();
+        if let Ok(bytes) = self.eth_call_raw(token, Bytes::from(decimals_calldata)).await {
+            if bytes.len() >= 32 {
+                // decimals is uint8, stored in last byte of 32-byte word
+                info.decimals = Some(bytes[31]);
+            }
+        }
+
+        info
+    }
+
+    /// Decode ABI-encoded string from bytes
+    #[allow(dead_code)]
+    fn decode_string(bytes: &[u8]) -> Option<String> {
+        if bytes.len() < 64 {
+            // Try bytes32 format (some old tokens like MKR)
+            if bytes.len() >= 32 {
+                let end = bytes.iter().position(|&b| b == 0).unwrap_or(32);
+                return String::from_utf8(bytes[..end].to_vec()).ok();
+            }
+            return None;
+        }
+
+        // Standard ABI string encoding:
+        // - First 32 bytes: offset to string data
+        // - Next 32 bytes: string length
+        // - Remaining: string data
+        let length = U256::from_be_slice(&bytes[32..64]);
+        let len = length.try_into().unwrap_or(0usize);
+        
+        if len == 0 || bytes.len() < 64 + len {
+            return None;
+        }
+
+        String::from_utf8(bytes[64..64 + len].to_vec()).ok()
     }
 
     /// Detect if a token is a honeypot by simulating buy → sell cycle

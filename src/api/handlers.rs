@@ -176,17 +176,49 @@ pub async fn check_honeypot(
         )
     })?;
 
+    // Get detector for requested chain (default: Ethereum)
+    let detector = HoneypotDetector::for_chain(req.chain_id).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::error(
+                ApiError::bad_request(format!(
+                    "Unsupported chain_id: {}. Supported: 1 (ETH), 56 (BSC), 137 (Polygon), 42161 (Arbitrum), 10 (Optimism), 43114 (Avalanche), 8453 (Base)",
+                    req.chain_id
+                )),
+                start.elapsed().as_secs_f64() * 1000.0,
+            )),
+        )
+    })?;
+
+    let chain_id = detector.chain_id;
+    let chain_name = detector.chain_name.clone();
+    let native_symbol = detector.native_symbol.clone();
+
+    info!("🔗 Chain: {} ({}) - {}", chain_name, chain_id, native_symbol);
+
+    // Cache key includes chain_id for multi-chain support
+    let cache_key = format!("{}:{}", req.chain_id, req.token_address.to_lowercase());
+
     // ============================================
     // CACHE-FIRST: Check cache before RPC call
     // ============================================
-    if let Some(cached_result) = state.cache.get(&req.token_address) {
-        info!("⚡ Returning cached result for {}", req.token_address);
+    if let Some(cached_result) = state.cache.get(&cache_key) {
+        info!("⚡ Returning cached result for {} on {}", req.token_address, chain_name);
+        
+        // Fetch token info (quick RPC calls)
+        let token_info = detector.fetch_token_info(token).await;
         
         // Calculate risk score from cached result
         let risk_score = calculate_risk_score(&cached_result);
         
         let data = HoneypotCheckData {
             token_address: req.token_address,
+            token_name: token_info.name,
+            token_symbol: token_info.symbol,
+            token_decimals: token_info.decimals,
+            chain_id,
+            chain_name,
+            native_symbol,
             is_honeypot: cached_result.is_honeypot || cached_result.sell_reverted,
             risk_score,
             buy_success: cached_result.buy_success,
@@ -210,15 +242,14 @@ pub async fn check_honeypot(
     let test_amount: f64 = req.test_amount_eth.parse().unwrap_or(0.1);
     let test_wei = U256::from((test_amount * 1e18) as u128);
 
-    info!("🔍 CACHE MISS - Starting RPC simulation for: {}", req.token_address);
-    info!("   Test amount: {} ETH", test_amount);
+    info!("🔍 CACHE MISS - Starting RPC simulation for: {} on {}", req.token_address, chain_name);
+    info!("   Test amount: {} {}", test_amount, native_symbol);
     
-    let detector = HoneypotDetector::mainnet();
     let result = detector.detect_async(token, test_wei).await;
 
     match &result {
         Ok(data) => {
-            info!("✅ Simulation successful for {}", req.token_address);
+            info!("✅ Simulation successful for {} on {}", req.token_address, chain_name);
             info!("   is_honeypot: {}, buy_success: {}, sell_success: {}", 
                   data.is_honeypot, data.buy_success, data.sell_success);
             info!("   buy_tax: {:.2}%, sell_tax: {:.2}%, total_loss: {:.2}%",
@@ -233,12 +264,15 @@ pub async fn check_honeypot(
     match result {
         Ok(hp_result) => {
             // ============================================
-            // CACHE SET: Store valid result
+            // CACHE SET: Store valid result (with chain_id in key)
             // ============================================
-            state.cache.set(&req.token_address, hp_result.clone());
+            state.cache.set(&cache_key, hp_result.clone());
+
+            // Fetch token info (name, symbol, decimals)
+            let token_info = detector.fetch_token_info(token).await;
+            info!("📛 Token info: {:?}", token_info);
 
             // Calculate risk score based on actual simulation results
-            // Calculate risk score
             let risk_score = calculate_risk_score(&hp_result);
 
             // Record telemetry for honeypot checks
@@ -259,6 +293,12 @@ pub async fn check_honeypot(
 
             let data = HoneypotCheckData {
                 token_address: req.token_address,
+                token_name: token_info.name,
+                token_symbol: token_info.symbol,
+                token_decimals: token_info.decimals,
+                chain_id,
+                chain_name,
+                native_symbol,
                 is_honeypot: hp_result.is_honeypot || hp_result.sell_reverted,
                 risk_score,
                 buy_success: hp_result.buy_success,

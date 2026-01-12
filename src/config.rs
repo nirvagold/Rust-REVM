@@ -2,9 +2,245 @@
 //! Handles all configurable parameters and known DEX router addresses
 
 use alloy_primitives::Address;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::time::Duration;
+
+/// Supported blockchain networks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChainId {
+    Ethereum = 1,
+    BinanceSmartChain = 56,
+    Polygon = 137,
+    Arbitrum = 42161,
+    Optimism = 10,
+    Avalanche = 43114,
+    Base = 8453,
+}
+
+impl ChainId {
+    /// Get chain from numeric ID
+    #[allow(dead_code)]
+    pub fn from_id(id: u64) -> Option<Self> {
+        match id {
+            1 => Some(Self::Ethereum),
+            56 => Some(Self::BinanceSmartChain),
+            137 => Some(Self::Polygon),
+            42161 => Some(Self::Arbitrum),
+            10 => Some(Self::Optimism),
+            43114 => Some(Self::Avalanche),
+            8453 => Some(Self::Base),
+            _ => None,
+        }
+    }
+
+    /// Get chain name
+    #[allow(dead_code)]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Ethereum => "Ethereum",
+            Self::BinanceSmartChain => "BNB Smart Chain",
+            Self::Polygon => "Polygon",
+            Self::Arbitrum => "Arbitrum One",
+            Self::Optimism => "Optimism",
+            Self::Avalanche => "Avalanche C-Chain",
+            Self::Base => "Base",
+        }
+    }
+
+    /// Get chain symbol
+    #[allow(dead_code)]
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            Self::Ethereum => "ETH",
+            Self::BinanceSmartChain => "BNB",
+            Self::Polygon => "MATIC",
+            Self::Arbitrum => "ETH",
+            Self::Optimism => "ETH",
+            Self::Avalanche => "AVAX",
+            Self::Base => "ETH",
+        }
+    }
+
+    /// Get block explorer URL
+    #[allow(dead_code)]
+    pub fn explorer(&self) -> &'static str {
+        match self {
+            Self::Ethereum => "https://etherscan.io",
+            Self::BinanceSmartChain => "https://bscscan.com",
+            Self::Polygon => "https://polygonscan.com",
+            Self::Arbitrum => "https://arbiscan.io",
+            Self::Optimism => "https://optimistic.etherscan.io",
+            Self::Avalanche => "https://snowtrace.io",
+            Self::Base => "https://basescan.org",
+        }
+    }
+}
+
+/// Chain-specific configuration (WETH, Router, RPC)
+#[derive(Debug, Clone)]
+pub struct ChainConfig {
+    pub chain_id: ChainId,
+    pub name: String,
+    pub symbol: String,
+    pub weth: Address,
+    pub router: Address,
+    pub rpc_url: String,
+}
+
+impl ChainConfig {
+    /// Get Alchemy RPC URL for a chain
+    fn alchemy_url(chain_id: u64, api_key: &str) -> Option<String> {
+        let network = match chain_id {
+            1 => "eth-mainnet",
+            56 => "bnb-mainnet",
+            137 => "polygon-mainnet",
+            42161 => "arb-mainnet",
+            10 => "opt-mainnet",
+            43114 => "avax-mainnet",
+            8453 => "base-mainnet",
+            _ => return None,
+        };
+        Some(format!("https://{}.g.alchemy.com/v2/{}", network, api_key))
+    }
+
+    /// Extract API key from Alchemy URL or env var
+    fn get_alchemy_key() -> Option<String> {
+        // First try dedicated ALCHEMY_API_KEY env var
+        if let Ok(key) = std::env::var("ALCHEMY_API_KEY") {
+            if !key.is_empty() && key != "YOUR_API_KEY" {
+                return Some(key);
+            }
+        }
+        
+        // Fallback: extract from ETH_HTTP_URL
+        std::env::var("ETH_HTTP_URL")
+            .ok()
+            .and_then(|url| {
+                url.split("/v2/").nth(1).map(|s| s.to_string())
+            })
+            .filter(|k| !k.is_empty() && k != "YOUR_API_KEY")
+    }
+
+    /// Get all supported chain configs
+    pub fn all_chains() -> HashMap<u64, ChainConfig> {
+        let mut chains = HashMap::new();
+        
+        // Get Alchemy API key (from ALCHEMY_API_KEY or extracted from ETH_HTTP_URL)
+        let alchemy_key = Self::get_alchemy_key();
+
+        // Ethereum Mainnet
+        let eth_rpc = std::env::var("ETH_HTTP_URL")
+            .ok()
+            .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(1, k)))
+            .unwrap_or_else(|| "https://eth.llamarpc.com".to_string());
+        chains.insert(1, ChainConfig {
+            chain_id: ChainId::Ethereum,
+            name: "Ethereum".to_string(),
+            symbol: "ETH".to_string(),
+            weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".parse().unwrap(),
+            router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap(),
+            rpc_url: eth_rpc,
+        });
+
+        // BNB Smart Chain
+        let bsc_rpc = std::env::var("BSC_HTTP_URL")
+            .ok()
+            .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(56, k)))
+            .unwrap_or_else(|| "https://bsc-dataseed.binance.org".to_string());
+        chains.insert(56, ChainConfig {
+            chain_id: ChainId::BinanceSmartChain,
+            name: "BNB Smart Chain".to_string(),
+            symbol: "BNB".to_string(),
+            weth: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c".parse().unwrap(),
+            router: "0x10ED43C718714eb63d5aA57B78B54704E256024E".parse().unwrap(),
+            rpc_url: bsc_rpc,
+        });
+
+        // Polygon
+        let polygon_rpc = std::env::var("POLYGON_HTTP_URL")
+            .ok()
+            .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(137, k)))
+            .unwrap_or_else(|| "https://polygon-rpc.com".to_string());
+        chains.insert(137, ChainConfig {
+            chain_id: ChainId::Polygon,
+            name: "Polygon".to_string(),
+            symbol: "MATIC".to_string(),
+            weth: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270".parse().unwrap(),
+            router: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff".parse().unwrap(),
+            rpc_url: polygon_rpc,
+        });
+
+        // Arbitrum One
+        let arb_rpc = std::env::var("ARBITRUM_HTTP_URL")
+            .ok()
+            .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(42161, k)))
+            .unwrap_or_else(|| "https://arb1.arbitrum.io/rpc".to_string());
+        chains.insert(42161, ChainConfig {
+            chain_id: ChainId::Arbitrum,
+            name: "Arbitrum One".to_string(),
+            symbol: "ETH".to_string(),
+            weth: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".parse().unwrap(),
+            router: "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".parse().unwrap(),
+            rpc_url: arb_rpc,
+        });
+
+        // Optimism
+        let op_rpc = std::env::var("OPTIMISM_HTTP_URL")
+            .ok()
+            .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(10, k)))
+            .unwrap_or_else(|| "https://mainnet.optimism.io".to_string());
+        chains.insert(10, ChainConfig {
+            chain_id: ChainId::Optimism,
+            name: "Optimism".to_string(),
+            symbol: "ETH".to_string(),
+            weth: "0x4200000000000000000000000000000000000006".parse().unwrap(),
+            router: "0x9c12939390052919aF3155f41Bf4160Fd3666A6f".parse().unwrap(),
+            rpc_url: op_rpc,
+        });
+
+        // Avalanche C-Chain
+        let avax_rpc = std::env::var("AVALANCHE_HTTP_URL")
+            .ok()
+            .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(43114, k)))
+            .unwrap_or_else(|| "https://api.avax.network/ext/bc/C/rpc".to_string());
+        chains.insert(43114, ChainConfig {
+            chain_id: ChainId::Avalanche,
+            name: "Avalanche C-Chain".to_string(),
+            symbol: "AVAX".to_string(),
+            weth: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7".parse().unwrap(),
+            router: "0x60aE616a2155Ee3d9A68541Ba4544862310933d4".parse().unwrap(),
+            rpc_url: avax_rpc,
+        });
+
+        // Base
+        let base_rpc = std::env::var("BASE_HTTP_URL")
+            .ok()
+            .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(8453, k)))
+            .unwrap_or_else(|| "https://mainnet.base.org".to_string());
+        chains.insert(8453, ChainConfig {
+            chain_id: ChainId::Base,
+            name: "Base".to_string(),
+            symbol: "ETH".to_string(),
+            weth: "0x4200000000000000000000000000000000000006".parse().unwrap(),
+            router: "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb".parse().unwrap(),
+            rpc_url: base_rpc,
+        });
+
+        chains
+    }
+
+    /// Get config for specific chain
+    pub fn get(chain_id: u64) -> Option<ChainConfig> {
+        Self::all_chains().remove(&chain_id)
+    }
+
+    /// Get default (Ethereum)
+    #[allow(dead_code)]
+    pub fn default_chain() -> ChainConfig {
+        Self::get(1).unwrap()
+    }
+}
 
 /// Known DEX Router addresses on Ethereum Mainnet
 /// These are the primary targets for sandwich attack detection
