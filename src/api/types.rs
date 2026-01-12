@@ -1,6 +1,6 @@
 //! API Request/Response Types
 
-use crate::risk_score::RiskScore;
+use crate::core::risk_score::RiskScore;
 use serde::{Deserialize, Serialize};
 
 /// API Response wrapper

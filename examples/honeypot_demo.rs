@@ -5,7 +5,7 @@
 //! Run with: cargo run --example honeypot_demo
 
 use alloy_primitives::{Address, U256};
-use ruster_revm::honeypot::{HoneypotDetector, HoneypotResult};
+use ruster_revm::{HoneypotDetector, HoneypotResult};
 use std::time::Instant;
 
 fn main() {

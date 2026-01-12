@@ -228,52 +228,24 @@ impl DexScreenerClient {
         })
     }
 
-    /// Convert numeric chain ID to DexScreener chain name
+    /// Convert numeric chain ID to DexScreener chain name (delegates to constants)
     fn chain_id_to_dexscreener_name(chain_id: u64) -> &'static str {
-        match chain_id {
-            1 => "ethereum",
-            56 => "bsc",
-            137 => "polygon",
-            42161 => "arbitrum",
-            10 => "optimism",
-            43114 => "avalanche",
-            8453 => "base",
-            _ => "ethereum",
-        }
+        crate::utils::constants::chain_id_to_dexscreener_name(chain_id)
     }
 
-    /// Convert DexScreener chain name to numeric chain ID
+    /// Convert DexScreener chain name to numeric chain ID (delegates to constants)
     fn dexscreener_name_to_chain_id(name: &str) -> u64 {
-        match name.to_lowercase().as_str() {
-            "ethereum" => 1,
-            "bsc" => 56,
-            "polygon" => 137,
-            "arbitrum" => 42161,
-            "optimism" => 10,
-            "avalanche" => 43114,
-            "base" => 8453,
-            "solana" => 0, // Not supported
-            _ => 1, // Default to Ethereum
-        }
+        crate::utils::constants::dexscreener_name_to_chain_id(name)
     }
 
-    /// Get human-readable chain name
+    /// Get human-readable chain name (delegates to constants)
     fn chain_id_to_name(chain_id: u64) -> &'static str {
-        Self::chain_id_to_name_pub(chain_id)
+        crate::utils::constants::get_chain_name(chain_id)
     }
 
-    /// Public version of chain_id_to_name
+    /// Public version of chain_id_to_name (delegates to constants)
     pub fn chain_id_to_name_pub(chain_id: u64) -> &'static str {
-        match chain_id {
-            1 => "Ethereum",
-            56 => "BNB Smart Chain",
-            137 => "Polygon",
-            42161 => "Arbitrum One",
-            10 => "Optimism",
-            43114 => "Avalanche C-Chain",
-            8453 => "Base",
-            _ => "Unknown",
-        }
+        crate::utils::constants::get_chain_name(chain_id)
     }
 }
 

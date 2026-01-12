@@ -13,11 +13,12 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use tracing::{debug, info};
 
-use crate::config::{DexRouters, SentryConfig};
-use crate::decoder::SwapDecoder;
-use crate::honeypot::HoneypotDetector;
-use crate::telemetry::{TelemetryCollector, TelemetryEvent, ThreatType};
-use crate::types::{AnalysisResult, RiskFactor, RiskLevel, SentryStats};
+use crate::models::config::{DexRouters, SentryConfig};
+use crate::models::types::{AnalysisResult, RiskFactor, RiskLevel, SentryStats};
+use crate::utils::constants::wei_to_eth;
+use crate::utils::decoder::SwapDecoder;
+use crate::utils::telemetry::{TelemetryCollector, TelemetryEvent, ThreatType};
+use crate::core::honeypot::HoneypotDetector;
 
 /// Main analyzer struct - the heart of Mempool Sentry
 pub struct MempoolAnalyzer {
@@ -409,23 +410,5 @@ fn process_transaction(
     Ok(())
 }
 
-/// Convert wei to ETH
-fn wei_to_eth(wei: U256) -> f64 {
-    let wei_u128: u128 = wei.try_into().unwrap_or(u128::MAX);
-    wei_u128 as f64 / 1e18
-}
-
-// Make SentryConfig cloneable for async tasks
-impl Clone for SentryConfig {
-    fn clone(&self) -> Self {
-        Self {
-            wss_url: self.wss_url.clone(),
-            http_url: self.http_url.clone(),
-            max_concurrent_tasks: self.max_concurrent_tasks,
-            rpc_timeout: self.rpc_timeout,
-            min_gas_price_gwei: self.min_gas_price_gwei,
-            slippage_threshold_bps: self.slippage_threshold_bps,
-            high_tax_threshold_bps: self.high_tax_threshold_bps,
-        }
-    }
-}
+// CEO Directive: wei_to_eth moved to utils/constants.rs
+// Clone impl moved to models/config.rs

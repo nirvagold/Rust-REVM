@@ -452,10 +452,8 @@ fn current_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
-fn wei_to_eth(wei: U256) -> f64 {
-    let wei_u128: u128 = wei.try_into().unwrap_or(u128::MAX);
-    wei_u128 as f64 / 1e18
-}
+// CEO Directive: Use wei_to_eth from utils/constants.rs
+use crate::utils::constants::wei_to_eth;
 
 #[cfg(test)]
 mod tests {

@@ -6,6 +6,8 @@
 //! 3. Exponential backoff retry logic
 //! 4. User-Agent header & API key protection
 //! 5. Modular architecture for future Solana support
+//!
+//! CEO Directive: Uses constants from utils/constants.rs
 
 use eyre::{eyre, Result};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
@@ -13,17 +15,11 @@ use serde::Deserialize;
 use std::time::Duration;
 use tracing::{info, warn};
 
-/// RusterShield User-Agent for Alchemy dashboard monitoring
-const USER_AGENT_STRING: &str = "RusterShield/1.0.0";
-
-/// Default timeout for RPC requests (10 seconds per CEO directive)
-const DEFAULT_TIMEOUT_SECS: u64 = 10;
-
-/// Maximum retry attempts
-const MAX_RETRIES: u32 = 3;
-
-/// Base delay for exponential backoff (milliseconds)
-const BASE_RETRY_DELAY_MS: u64 = 100;
+use crate::utils::constants::{
+    build_alchemy_url, get_alchemy_subdomain, get_public_rpc_fallback,
+    BASE_RETRY_DELAY_MS, DEFAULT_RPC_TIMEOUT_SECS, MAX_RPC_RETRIES,
+    SUPPORTED_CHAIN_IDS, USER_AGENT as USER_AGENT_CONST,
+};
 
 /// Alchemy network identifiers for dynamic URL construction
 #[derive(Debug, Clone, Copy)]
@@ -39,18 +35,9 @@ pub enum AlchemyNetwork {
 }
 
 impl AlchemyNetwork {
-    /// Get Alchemy subdomain for this network
+    /// Get Alchemy subdomain for this network (delegates to constants)
     pub fn subdomain(&self) -> &'static str {
-        match self {
-            Self::EthMainnet => "eth-mainnet",
-            Self::BscMainnet => "bnb-mainnet",
-            Self::PolygonMainnet => "polygon-mainnet",
-            Self::ArbitrumMainnet => "arb-mainnet",
-            Self::OptimismMainnet => "opt-mainnet",
-            Self::AvalancheMainnet => "avax-mainnet",
-            Self::BaseMainnet => "base-mainnet",
-            Self::SolanaMainnet => "solana-mainnet",
-        }
+        get_alchemy_subdomain(self.chain_id()).unwrap_or("eth-mainnet")
     }
 
     /// Get chain ID (0 for non-EVM chains like Solana)
@@ -63,7 +50,7 @@ impl AlchemyNetwork {
             Self::OptimismMainnet => 10,
             Self::AvalancheMainnet => 43114,
             Self::BaseMainnet => 8453,
-            Self::SolanaMainnet => 0, // Non-EVM
+            Self::SolanaMainnet => 0,
         }
     }
 
@@ -87,21 +74,12 @@ impl AlchemyNetwork {
     }
 }
 
-/// Public RPC fallback URLs (last resort)
+/// Public RPC fallback URLs (delegates to constants)
 pub struct PublicRpcFallback;
 
 impl PublicRpcFallback {
     pub fn get(chain_id: u64) -> Option<&'static str> {
-        match chain_id {
-            1 => Some("https://eth.llamarpc.com"),
-            56 => Some("https://bsc-dataseed.binance.org"),
-            137 => Some("https://polygon-rpc.com"),
-            42161 => Some("https://arb1.arbitrum.io/rpc"),
-            10 => Some("https://mainnet.optimism.io"),
-            43114 => Some("https://api.avax.network/ext/bc/C/rpc"),
-            8453 => Some("https://mainnet.base.org"),
-            _ => None,
-        }
+        get_public_rpc_fallback(chain_id)
     }
 }
 
@@ -122,13 +100,13 @@ pub struct RpcProvider {
 
 impl RpcProvider {
     /// Create a new RPC provider for a chain
-    /// Dynamically constructs Alchemy URL from ALCHEMY_API_KEY
     pub fn new(chain_id: u64) -> Result<Self> {
         let network = AlchemyNetwork::from_chain_id(chain_id)
             .ok_or_else(|| eyre!("Unsupported chain_id: {}", chain_id))?;
 
         let api_key = Self::get_alchemy_key()?;
-        let primary_url = Self::build_alchemy_url(&network, &api_key);
+        let primary_url = build_alchemy_url(chain_id, &api_key)
+            .ok_or_else(|| eyre!("Cannot build Alchemy URL for chain {}", chain_id))?;
         let fallback_url = PublicRpcFallback::get(chain_id).map(String::from);
 
         let client = Self::build_client()?;
@@ -151,7 +129,7 @@ impl RpcProvider {
 
         Ok(Self {
             primary_url,
-            fallback_url: None, // No public Solana fallback
+            fallback_url: None,
             client,
             chain_id: 0,
             network_name: "solana-mainnet".to_string(),
@@ -159,9 +137,7 @@ impl RpcProvider {
     }
 
     /// Get Alchemy API key from environment
-    /// NEVER logs the actual key (CEO security directive)
     fn get_alchemy_key() -> Result<String> {
-        // Try dedicated ALCHEMY_API_KEY first
         if let Ok(key) = std::env::var("ALCHEMY_API_KEY") {
             if !key.is_empty() && key != "YOUR_API_KEY" {
                 info!("🔑 Using ALCHEMY_API_KEY (key hidden)");
@@ -169,7 +145,6 @@ impl RpcProvider {
             }
         }
 
-        // Fallback: extract from ETH_HTTP_URL
         if let Ok(url) = std::env::var("ETH_HTTP_URL") {
             if let Some(key) = url.split("/v2/").nth(1) {
                 if !key.is_empty() && key != "YOUR_API_KEY" {
@@ -179,29 +154,18 @@ impl RpcProvider {
             }
         }
 
-        Err(eyre!("ALCHEMY_API_KEY not configured. Set ALCHEMY_API_KEY environment variable."))
-    }
-
-    /// Build Alchemy URL dynamically
-    fn build_alchemy_url(network: &AlchemyNetwork, api_key: &str) -> String {
-        format!("https://{}.g.alchemy.com/v2/{}", network.subdomain(), api_key)
+        Err(eyre!("ALCHEMY_API_KEY not configured"))
     }
 
     /// Build HTTP client with custom headers
     fn build_client() -> Result<reqwest::Client> {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_static(USER_AGENT_STRING),
-        );
-        headers.insert(
-            "Content-Type",
-            HeaderValue::from_static("application/json"),
-        );
+        headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_CONST));
+        headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
         reqwest::Client::builder()
             .default_headers(headers)
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(DEFAULT_RPC_TIMEOUT_SECS))
             .build()
             .map_err(|e| eyre!("Failed to build HTTP client: {}", e))
     }
@@ -249,9 +213,8 @@ impl RpcProvider {
     ) -> Result<T> {
         let mut last_error = None;
 
-        for attempt in 0..MAX_RETRIES {
+        for attempt in 0..MAX_RPC_RETRIES {
             if attempt > 0 {
-                // Exponential backoff: 100ms, 200ms, 400ms...
                 let delay = BASE_RETRY_DELAY_MS * (2_u64.pow(attempt - 1));
                 tokio::time::sleep(Duration::from_millis(delay)).await;
             }
@@ -259,16 +222,15 @@ impl RpcProvider {
             match self.execute_call::<T>(url, payload).await {
                 Ok(result) => return Ok(result),
                 Err(e) => {
-                    // Check for rate limit (HTTP 429)
                     if e.to_string().contains("429") || e.to_string().contains("rate limit") {
-                        warn!("⏳ Rate limited, backing off (attempt {}/{})", attempt + 1, MAX_RETRIES);
+                        warn!("⏳ Rate limited, backing off (attempt {}/{})", attempt + 1, MAX_RPC_RETRIES);
                     }
                     last_error = Some(e);
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| eyre!("Unknown error after {} retries", MAX_RETRIES)))
+        Err(last_error.unwrap_or_else(|| eyre!("Unknown error after {} retries", MAX_RPC_RETRIES)))
     }
 
     /// Execute single RPC call
@@ -284,7 +246,6 @@ impl RpcProvider {
             .await
             .map_err(|e| eyre!("Request failed: {}", e))?;
 
-        // Check HTTP status
         let status = response.status();
         if status == 429 {
             return Err(eyre!("Rate limited (HTTP 429)"));
@@ -305,14 +266,7 @@ impl RpcProvider {
 
     /// Execute eth_call (EVM chains only)
     pub async fn eth_call(&self, to: &str, data: &str) -> Result<String> {
-        let params = serde_json::json!([
-            {
-                "to": to,
-                "data": data
-            },
-            "latest"
-        ]);
-
+        let params = serde_json::json!([{ "to": to, "data": data }, "latest"]);
         self.call::<String>("eth_call", params).await
     }
 
@@ -322,9 +276,8 @@ impl RpcProvider {
         self.call::<String>("eth_getCode", params).await
     }
 
-    /// Get RPC URL (for logging, masks API key)
+    /// Get RPC URL (masked for logging)
     pub fn masked_url(&self) -> String {
-        // Mask API key in URL for safe logging
         if self.primary_url.contains("/v2/") {
             let parts: Vec<&str> = self.primary_url.split("/v2/").collect();
             if parts.len() == 2 {
@@ -359,7 +312,6 @@ struct RpcError {
 }
 
 /// Multi-chain RPC manager
-/// Manages providers for all supported chains
 pub struct RpcManager {
     providers: std::collections::HashMap<u64, RpcProvider>,
     solana_provider: Option<RpcProvider>,
@@ -370,8 +322,7 @@ impl RpcManager {
     pub fn new() -> Self {
         let mut providers = std::collections::HashMap::new();
 
-        // Initialize EVM chain providers
-        for chain_id in [1, 56, 137, 42161, 10, 43114, 8453] {
+        for chain_id in SUPPORTED_CHAIN_IDS {
             match RpcProvider::new(chain_id) {
                 Ok(provider) => {
                     info!("✅ Initialized RPC for chain {} ({})", chain_id, provider.masked_url());
@@ -383,7 +334,6 @@ impl RpcManager {
             }
         }
 
-        // Initialize Solana provider
         let solana_provider = match RpcProvider::solana() {
             Ok(provider) => {
                 info!("✅ Initialized Solana RPC ({})", provider.masked_url());
@@ -395,10 +345,7 @@ impl RpcManager {
             }
         };
 
-        Self {
-            providers,
-            solana_provider,
-        }
+        Self { providers, solana_provider }
     }
 
     /// Get provider for a chain
@@ -431,7 +378,6 @@ mod tests {
     fn test_alchemy_network_subdomain() {
         assert_eq!(AlchemyNetwork::EthMainnet.subdomain(), "eth-mainnet");
         assert_eq!(AlchemyNetwork::BaseMainnet.subdomain(), "base-mainnet");
-        assert_eq!(AlchemyNetwork::SolanaMainnet.subdomain(), "solana-mainnet");
     }
 
     #[test]

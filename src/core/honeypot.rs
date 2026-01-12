@@ -221,7 +221,7 @@ impl HoneypotDetector {
 
     /// Create detector for specific chain
     pub fn for_chain(chain_id: u64) -> Option<Self> {
-        use crate::config::ChainConfig;
+        use crate::models::config::ChainConfig;
         
         ChainConfig::get(chain_id).map(|config| Self {
             chain_id: config.chain_id as u64,
