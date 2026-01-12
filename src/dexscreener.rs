@@ -223,6 +223,11 @@ impl DexScreenerClient {
 
     /// Get human-readable chain name
     fn chain_id_to_name(chain_id: u64) -> &'static str {
+        Self::chain_id_to_name_pub(chain_id)
+    }
+
+    /// Public version of chain_id_to_name
+    pub fn chain_id_to_name_pub(chain_id: u64) -> &'static str {
         match chain_id {
             1 => "Ethereum",
             56 => "BNB Smart Chain",

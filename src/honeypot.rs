@@ -247,6 +247,15 @@ impl HoneypotDetector {
         }
     }
 
+    /// Add a priority router (from DexScreener) to the front of the list
+    /// This router will be tried first before the default routers
+    #[allow(dead_code)]
+    pub fn with_priority_router(mut self, name: String, router: Address) -> Self {
+        // Insert at the beginning so it's tried first
+        self.routers.insert(0, DexInfo { name, address: router });
+        self
+    }
+
     /// Get primary router
     fn primary_router(&self) -> Address {
         self.routers.first().map(|r| r.address).unwrap_or_default()
