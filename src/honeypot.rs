@@ -173,6 +173,13 @@ impl HoneypotResult {
     }
 }
 
+/// DEX Router info for multi-DEX support
+#[derive(Debug, Clone)]
+pub struct DexInfo {
+    pub name: String,
+    pub address: Address,
+}
+
 /// Honeypot detector using REVM simulation
 #[allow(dead_code)]
 pub struct HoneypotDetector {
@@ -184,8 +191,8 @@ pub struct HoneypotDetector {
     pub native_symbol: String,
     /// WETH/WBNB address
     weth: Address,
-    /// DEX Router address
-    router: Address,
+    /// Multiple DEX routers to try
+    routers: Vec<DexInfo>,
     /// HTTP RPC URL for fetching bytecode
     rpc_url: String,
 }
@@ -204,7 +211,9 @@ impl HoneypotDetector {
             chain_name: "Ethereum".to_string(),
             native_symbol: "ETH".to_string(),
             weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".parse().unwrap(),
-            router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap(),
+            routers: vec![
+                DexInfo { name: "Uniswap V2".to_string(), address: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap() },
+            ],
             rpc_url: std::env::var("ETH_HTTP_URL")
                 .unwrap_or_else(|_| "https://eth.llamarpc.com".to_string()),
         })
@@ -219,7 +228,7 @@ impl HoneypotDetector {
             chain_name: config.name,
             native_symbol: config.symbol,
             weth: config.weth,
-            router: config.router,
+            routers: config.routers.into_iter().map(|r| DexInfo { name: r.name, address: r.address }).collect(),
             rpc_url: config.rpc_url,
         })
     }
@@ -232,10 +241,15 @@ impl HoneypotDetector {
             chain_name: "Custom".to_string(),
             native_symbol: "ETH".to_string(),
             weth,
-            router,
+            routers: vec![DexInfo { name: "Custom".to_string(), address: router }],
             rpc_url: std::env::var("ETH_HTTP_URL")
                 .unwrap_or_else(|_| "https://eth.llamarpc.com".to_string()),
         }
+    }
+
+    /// Get primary router
+    fn primary_router(&self) -> Address {
+        self.routers.first().map(|r| r.address).unwrap_or_default()
     }
 
     /// Fetch bytecode from RPC
@@ -277,6 +291,7 @@ impl HoneypotDetector {
 
     /// Detect honeypot with RPC bytecode fetching (async version)
     /// Uses eth_call to simulate swap on actual blockchain state
+    /// Tries multiple DEX routers until one works
     #[allow(dead_code)]
     pub async fn detect_async(
         &self,
@@ -286,7 +301,8 @@ impl HoneypotDetector {
         let start = Instant::now();
         let mut risk_factors: Vec<String> = Vec::new();
 
-        info!("🔗 Simulating swap via RPC eth_call...");
+        info!("🔗 Simulating swap via RPC eth_call on {} ({} DEXes)...", 
+              self.chain_name, self.routers.len());
 
         // Fetch token bytecode for access control scan
         let token_bytecode = self.fetch_bytecode(token).await;
@@ -298,123 +314,151 @@ impl HoneypotDetector {
             0
         };
 
-        // Try to get price quote from Uniswap
-        let quote_result = self.get_amounts_out(test_amount_eth, token).await;
-        
-        match quote_result {
-            Ok(expected_tokens) => {
-                if expected_tokens.is_zero() {
-                    return Ok(HoneypotResult::honeypot(
-                        "No liquidity - cannot get price quote".to_string(),
-                        false,
-                        false,
-                        false,
-                        access_control_penalty,
-                        risk_factors,
-                        start.elapsed().as_millis() as u64,
-                    ));
-                }
+        // Try each DEX router until we find liquidity
+        let mut last_error: Option<String> = None;
+        let mut tried_dexes: Vec<String> = Vec::new();
 
-                info!("📊 Expected tokens from swap: {}", expected_tokens);
+        for dex in &self.routers {
+            info!("🔄 Trying {} router...", dex.name);
+            tried_dexes.push(dex.name.clone());
 
-                // Try reverse quote (sell tokens back to ETH)
-                let sell_quote = self.get_amounts_out_reverse(expected_tokens, token).await;
-                
-                match sell_quote {
-                    Ok(eth_back) => {
-                        let latency_ms = start.elapsed().as_millis() as u64;
-                        
-                        // Calculate loss
-                        let test_f64: f64 = u128::try_from(test_amount_eth).unwrap_or(0) as f64;
-                        let back_f64: f64 = u128::try_from(eth_back).unwrap_or(0) as f64;
-                        
-                        if test_f64 == 0.0 {
-                            return Ok(HoneypotResult::honeypot(
-                                "Invalid test amount".to_string(),
-                                true, false, false,
-                                access_control_penalty, risk_factors, latency_ms,
+            // Try to get price quote from this DEX
+            let quote_result = self.get_amounts_out_with_router(test_amount_eth, token, dex.address).await;
+            
+            match quote_result {
+                Ok(expected_tokens) if !expected_tokens.is_zero() => {
+                    info!("✅ Found liquidity on {}: {} tokens", dex.name, expected_tokens);
+
+                    // Try reverse quote (sell tokens back to native)
+                    let sell_quote = self.get_amounts_out_reverse_with_router(expected_tokens, token, dex.address).await;
+                    
+                    match sell_quote {
+                        Ok(native_back) => {
+                            let latency_ms = start.elapsed().as_millis() as u64;
+                            
+                            // Calculate loss
+                            let test_f64: f64 = u128::try_from(test_amount_eth).unwrap_or(0) as f64;
+                            let back_f64: f64 = u128::try_from(native_back).unwrap_or(0) as f64;
+                            
+                            if test_f64 == 0.0 {
+                                continue; // Try next DEX
+                            }
+
+                            let total_loss = ((test_f64 - back_f64) / test_f64) * 100.0;
+                            let total_loss = total_loss.max(0.0);
+                            
+                            info!("💰 {} back from sell on {}: {} (loss: {:.2}%)", 
+                                  self.native_symbol, dex.name, native_back, total_loss);
+
+                            // If loss > 90%, likely honeypot
+                            if total_loss > 90.0 {
+                                risk_factors.push(format!("Extreme loss on {}: {:.2}%", dex.name, total_loss));
+                                return Ok(HoneypotResult::honeypot(
+                                    format!("Extreme loss: {:.2}% on {} - likely honeypot", total_loss, dex.name),
+                                    true, false, false,
+                                    access_control_penalty, risk_factors, latency_ms,
+                                ));
+                            }
+
+                            // Success! Token is tradeable
+                            let buy_tax = total_loss / 2.0;
+                            let sell_tax = total_loss / 2.0;
+
+                            risk_factors.push(format!("Tested on {}", dex.name));
+
+                            return Ok(HoneypotResult::safe(
+                                buy_tax,
+                                sell_tax,
+                                access_control_penalty,
+                                risk_factors,
+                                latency_ms,
                             ));
                         }
-
-                        let total_loss = ((test_f64 - back_f64) / test_f64) * 100.0;
-                        let total_loss = total_loss.max(0.0); // Clamp to 0 minimum
-                        
-                        info!("💰 ETH back from sell: {} (loss: {:.2}%)", eth_back, total_loss);
-
-                        // If loss > 90%, likely honeypot or extreme tax
-                        if total_loss > 90.0 {
-                            risk_factors.push(format!("Extreme loss: {:.2}%", total_loss));
-                            return Ok(HoneypotResult::honeypot(
-                                format!("Extreme loss: {:.2}% - likely honeypot", total_loss),
-                                true, false, false,
-                                access_control_penalty, risk_factors, latency_ms,
-                            ));
+                        Err(e) => {
+                            // Sell failed on this DEX - might be honeypot or just no reverse liquidity
+                            warn!("⚠️ Sell quote failed on {}: {}", dex.name, e);
+                            last_error = Some(format!("Sell failed on {}: {}", dex.name, e));
+                            // Continue to try next DEX
                         }
-
-                        // Estimate taxes (simplified)
-                        let buy_tax = total_loss / 2.0;
-                        let sell_tax = total_loss / 2.0;
-
-                        Ok(HoneypotResult::safe(
-                            buy_tax,
-                            sell_tax,
-                            access_control_penalty,
-                            risk_factors,
-                            latency_ms,
-                        ))
-                    }
-                    Err(e) => {
-                        // Sell quote failed - might be honeypot
-                        warn!("⚠️ Sell quote failed: {}", e);
-                        Ok(HoneypotResult::honeypot(
-                            format!("Cannot sell: {}", e),
-                            true,
-                            false,
-                            true,
-                            access_control_penalty,
-                            risk_factors,
-                            start.elapsed().as_millis() as u64,
-                        ))
                     }
                 }
-            }
-            Err(e) => {
-                warn!("⚠️ Buy quote failed: {}", e);
-                Ok(HoneypotResult::honeypot(
-                    format!("Cannot buy: {} - No liquidity or invalid pair", e),
-                    false,
-                    false,
-                    false,
-                    access_control_penalty,
-                    risk_factors,
-                    start.elapsed().as_millis() as u64,
-                ))
+                Ok(_) => {
+                    // Zero tokens - no liquidity on this DEX
+                    info!("📭 No liquidity on {}", dex.name);
+                    last_error = Some(format!("No liquidity on {}", dex.name));
+                }
+                Err(e) => {
+                    // Quote failed - no pair on this DEX
+                    info!("📭 No pair on {}: {}", dex.name, e);
+                    last_error = Some(format!("No pair on {}", dex.name));
+                }
             }
         }
+
+        // All DEXes failed - return appropriate result
+        let latency_ms = start.elapsed().as_millis() as u64;
+        
+        // Check if it's a sell failure (potential honeypot) or just no liquidity
+        if let Some(ref err) = last_error {
+            if err.contains("Sell failed") {
+                return Ok(HoneypotResult::honeypot(
+                    format!("Cannot sell on any DEX (tried: {})", tried_dexes.join(", ")),
+                    true, false, true,
+                    access_control_penalty, risk_factors, latency_ms,
+                ));
+            }
+        }
+
+        // No liquidity found on any DEX
+        Ok(HoneypotResult {
+            is_honeypot: false,
+            reason: format!("No liquidity found on {} (tried: {})", self.chain_name, tried_dexes.join(", ")),
+            buy_success: false,
+            sell_success: false,
+            sell_reverted: false,
+            buy_tax_percent: 0.0,
+            sell_tax_percent: 0.0,
+            total_loss_percent: 0.0,
+            access_control_penalty,
+            risk_factors: vec![format!("No pair on: {}", tried_dexes.join(", "))],
+            latency_ms,
+        })
     }
 
-    /// Get expected output tokens for ETH input via Uniswap getAmountsOut
+    /// Get expected output tokens for native input via specific router
     #[allow(dead_code)]
-    async fn get_amounts_out(&self, amount_in: U256, token: Address) -> Result<U256> {
+    async fn get_amounts_out_with_router(&self, amount_in: U256, token: Address, router: Address) -> Result<U256> {
         let path = vec![self.weth, token];
         let calldata = getAmountsOutCall {
             amountIn: amount_in,
             path,
         }.abi_encode();
 
-        self.eth_call(self.router, Bytes::from(calldata)).await
+        self.eth_call(router, Bytes::from(calldata)).await
     }
 
-    /// Get expected ETH output for token input (reverse swap)
+    /// Get expected native output for token input via specific router
     #[allow(dead_code)]
-    async fn get_amounts_out_reverse(&self, amount_in: U256, token: Address) -> Result<U256> {
+    async fn get_amounts_out_reverse_with_router(&self, amount_in: U256, token: Address, router: Address) -> Result<U256> {
         let path = vec![token, self.weth];
         let calldata = getAmountsOutCall {
             amountIn: amount_in,
             path,
         }.abi_encode();
 
-        self.eth_call(self.router, Bytes::from(calldata)).await
+        self.eth_call(router, Bytes::from(calldata)).await
+    }
+
+    /// Get expected output tokens for native input via Uniswap getAmountsOut (uses primary router)
+    #[allow(dead_code)]
+    async fn get_amounts_out(&self, amount_in: U256, token: Address) -> Result<U256> {
+        self.get_amounts_out_with_router(amount_in, token, self.primary_router()).await
+    }
+
+    /// Get expected native output for token input (uses primary router)
+    #[allow(dead_code)]
+    async fn get_amounts_out_reverse(&self, amount_in: U256, token: Address) -> Result<U256> {
+        self.get_amounts_out_reverse_with_router(amount_in, token, self.primary_router()).await
     }
 
     /// Execute eth_call on RPC (returns U256)
@@ -615,7 +659,7 @@ impl HoneypotDetector {
         // Setup router with bytecode (if provided, otherwise use minimal mock)
         let router_code = router_bytecode.unwrap_or_else(|| self.mock_router_bytecode());
         db.insert_account_info(
-            self.router,
+            self.primary_router(),
             AccountInfo {
                 balance: U256::ZERO,
                 nonce: 0,
@@ -905,7 +949,7 @@ impl HoneypotDetector {
         .abi_encode();
 
         let result =
-            self.execute_tx(db, from, self.router, amount_eth, Bytes::from(calldata), 0)?;
+            self.execute_tx(db, from, self.primary_router(), amount_eth, Bytes::from(calldata), 0)?;
 
         // Parse return value (uint256[] amounts)
         // Last element is tokens received
@@ -928,7 +972,7 @@ impl HoneypotDetector {
         amount: U256,
     ) -> Result<()> {
         let calldata = approveCall {
-            spender: self.router,
+            spender: self.primary_router(),
             amount,
         }
         .abi_encode();
@@ -960,7 +1004,7 @@ impl HoneypotDetector {
         .abi_encode();
 
         let result =
-            self.execute_tx(db, from, self.router, U256::ZERO, Bytes::from(calldata), 2)?;
+            self.execute_tx(db, from, self.primary_router(), U256::ZERO, Bytes::from(calldata), 2)?;
 
         // Parse return value
         if result.len() >= 64 {
@@ -996,7 +1040,7 @@ impl HoneypotDetector {
             caller: from,
             gas_limit: 500_000,
             gas_price: U256::from(20_000_000_000u64),
-            transact_to: TxKind::Call(self.router),
+            transact_to: TxKind::Call(self.primary_router()),
             value: U256::ZERO,
             data: Bytes::from(calldata),
             nonce: Some(2),
