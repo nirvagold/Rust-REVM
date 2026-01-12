@@ -1,7 +1,7 @@
 //! API Request/Response Types
 
-use serde::{Deserialize, Serialize};
 use crate::risk_score::RiskScore;
+use serde::{Deserialize, Serialize};
 
 /// API Response wrapper
 #[derive(Debug, Serialize)]
@@ -56,7 +56,7 @@ impl ApiError {
             details: None,
         }
     }
-    
+
     pub fn unauthorized() -> Self {
         Self {
             code: "UNAUTHORIZED".to_string(),
@@ -64,7 +64,7 @@ impl ApiError {
             details: None,
         }
     }
-    
+
     pub fn rate_limited(retry_after: u64) -> Self {
         Self {
             code: "RATE_LIMITED".to_string(),
@@ -72,7 +72,7 @@ impl ApiError {
             details: Some(format!("retry_after: {}", retry_after)),
         }
     }
-    
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self {
             code: "INTERNAL_ERROR".to_string(),
@@ -95,8 +95,12 @@ pub struct TokenAnalysisRequest {
     pub chain_id: u64,
 }
 
-fn default_test_amount() -> String { "0.1".to_string() }
-fn default_chain_id() -> u64 { 1 }
+fn default_test_amount() -> String {
+    "0.1".to_string()
+}
+fn default_chain_id() -> u64 {
+    1
+}
 
 #[derive(Debug, Serialize)]
 pub struct TokenAnalysisData {
@@ -147,7 +151,8 @@ impl From<RiskScore> for RiskScoreResponse {
                 41..=60 => "MEDIUM",
                 61..=80 => "HIGH",
                 _ => "CRITICAL",
-            }.to_string(),
+            }
+            .to_string(),
             color: score.color_code().to_string(),
             components: RiskComponentsResponse {
                 honeypot: score.components.honeypot,
@@ -156,12 +161,16 @@ impl From<RiskScore> for RiskScoreResponse {
                 contract: score.components.contract,
                 mev_exposure: score.components.mev_exposure,
             },
-            breakdown: score.breakdown.into_iter().map(|f| ScoreFactorResponse {
-                name: f.name,
-                score: f.score,
-                weight: f.weight,
-                reason: f.reason,
-            }).collect(),
+            breakdown: score
+                .breakdown
+                .into_iter()
+                .map(|f| ScoreFactorResponse {
+                    name: f.name,
+                    score: f.score,
+                    weight: f.weight,
+                    reason: f.reason,
+                })
+                .collect(),
         }
     }
 }
@@ -207,7 +216,9 @@ pub struct BatchAnalysisRequest {
     pub concurrency: usize,
 }
 
-fn default_concurrency() -> usize { 10 }
+fn default_concurrency() -> usize {
+    10
+}
 
 #[derive(Debug, Serialize)]
 pub struct BatchAnalysisData {

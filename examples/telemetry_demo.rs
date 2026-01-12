@@ -1,34 +1,36 @@
 //! Telemetry Export Demo
-//! 
+//!
 //! Demonstrates the telemetry collection and marketing report generation
-//! 
+//!
 //! Run with: cargo run --example telemetry_demo
 
 use alloy_primitives::U256;
-use mempool_sentry::telemetry::{
+use ruster_revm::telemetry::{
     TelemetryCollector, TelemetryEvent, ThreatType, WeeklyReportGenerator,
 };
 use std::sync::Arc;
 
 fn main() {
-    println!(r#"
+    println!(
+        r#"
     ╔══════════════════════════════════════════════════════════════╗
     ║                                                              ║
     ║   📊 TELEMETRY EXPORT DEMO                                   ║
     ║   Marketing Data Collection & Report Generation              ║
     ║                                                              ║
     ╚══════════════════════════════════════════════════════════════╝
-    "#);
+    "#
+    );
 
     // Create telemetry collector
     let collector = Arc::new(TelemetryCollector::new());
-    
+
     println!("🔧 Simulating threat detection events...\n");
 
     // ============================================
     // SIMULATE VARIOUS THREAT DETECTIONS
     // ============================================
-    
+
     // Simulate 50 honeypot detections
     for i in 0..50 {
         let value = U256::from((1 + i % 10) as u128 * 100_000_000_000_000_000u128); // 0.1-1 ETH
@@ -36,7 +38,7 @@ fn main() {
             ThreatType::Honeypot,
             value,
             15 + (i % 20) as u64, // 15-35ms latency
-            5, // Critical
+            5,                    // Critical
             format!("Sell failed: Token {} blocked transfers", i),
         );
         collector.record_threat(event);
@@ -99,13 +101,16 @@ fn main() {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("📊 CURRENT STATISTICS");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
+
     let stats = collector.get_stats();
     println!();
     println!("   Total Analyzed:        {:>10}", stats.total_analyzed);
     println!("   Total Threats:         {:>10}", stats.total_threats);
     println!("   Honeypots Detected:    {:>10}", stats.honeypots_detected);
-    println!("   Value Protected:       {:>10.2} ETH", stats.total_value_protected_eth);
+    println!(
+        "   Value Protected:       {:>10.2} ETH",
+        stats.total_value_protected_eth
+    );
     println!("   Avg Latency:           {:>10.2}ms", stats.avg_latency_ms);
     println!();
     println!("   Threats by Type:");
@@ -118,11 +123,11 @@ fn main() {
     // GENERATE MARKETING REPORT
     // ============================================
     let eth_price = 2500.0; // Current ETH price in USD
-    
+
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("📈 MARKETING REPORT (ETH @ ${})", eth_price);
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
+
     println!("{}", collector.generate_marketing_report(eth_price));
 
     // ============================================
@@ -131,7 +136,7 @@ fn main() {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("📱 SOCIAL MEDIA POST (Discord/Telegram)");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
+
     let report_gen = WeeklyReportGenerator::new(collector.clone());
     println!("{}", report_gen.generate_social_post(eth_price));
     println!();

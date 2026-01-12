@@ -1,10 +1,10 @@
 //! Telemetry Module for Ruster REVM
-//! 
+//!
 //! Collects anonymous statistics about detected threats for:
 //! - Marketing reports ("Saved $2M from 500+ honeypots this week")
 //! - Performance monitoring
 //! - Product improvement insights
-//! 
+//!
 //! Privacy-first: No wallet addresses or transaction hashes stored
 
 use alloy_primitives::U256;
@@ -71,7 +71,7 @@ impl TelemetryEvent {
         // Round value to nearest 0.1 ETH for privacy
         let value_eth = wei_to_eth(value_wei);
         let rounded_value = (value_eth * 10.0).round() / 10.0;
-        
+
         Self {
             timestamp: current_timestamp(),
             threat_type,
@@ -111,7 +111,7 @@ impl TelemetryStats {
     pub fn marketing_summary(&self, eth_price_usd: f64) -> String {
         let usd_saved = self.total_value_protected_eth * eth_price_usd;
         let period_hours = (self.period_end - self.period_start) / 3600;
-        
+
         format!(
             r#"
 ╔══════════════════════════════════════════════════════════════════╗
@@ -142,13 +142,13 @@ impl TelemetryStats {
             self.avg_latency_ms,
         )
     }
-    
+
     /// Export as JSON for API
     #[allow(dead_code)]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
-    
+
     /// Export as CSV row
     pub fn to_csv_row(&self) -> String {
         format!(
@@ -189,12 +189,12 @@ impl TelemetryCollector {
     pub fn new() -> Self {
         Self::with_config(PathBuf::from("./telemetry"), 1000)
     }
-    
+
     /// Create collector with custom config
     pub fn with_config(export_dir: PathBuf, max_buffer_size: usize) -> Self {
         // Ensure export directory exists
         let _ = fs::create_dir_all(&export_dir);
-        
+
         Self {
             events: Arc::new(RwLock::new(Vec::with_capacity(max_buffer_size))),
             total_analyzed: AtomicU64::new(0),
@@ -208,40 +208,42 @@ impl TelemetryCollector {
             max_buffer_size,
         }
     }
-    
+
     /// Record a transaction analysis (no threat)
     pub fn record_analysis(&self, latency_ms: u64) {
         self.total_analyzed.fetch_add(1, Ordering::Relaxed);
-        self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.total_latency_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
     }
-    
+
     /// Record a detected threat
     pub fn record_threat(&self, event: TelemetryEvent) {
         // Update atomic counters
         self.total_analyzed.fetch_add(1, Ordering::Relaxed);
         self.total_threats.fetch_add(1, Ordering::Relaxed);
-        self.total_latency_ms.fetch_add(event.latency_ms, Ordering::Relaxed);
-        
+        self.total_latency_ms
+            .fetch_add(event.latency_ms, Ordering::Relaxed);
+
         // Track honeypots separately (key marketing metric)
         if event.threat_type == ThreatType::Honeypot {
             self.honeypots_detected.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // Update value protected
         if let Ok(mut value) = self.total_value_wei.write() {
             let event_value = U256::from((event.value_at_risk_eth * 1e18) as u128);
             *value = value.saturating_add(event_value);
         }
-        
+
         // Update threat type counter
         if let Ok(mut counts) = self.threat_counts.write() {
             *counts.entry(event.threat_type.clone()).or_insert(0) += 1;
         }
-        
+
         // Buffer event
         if let Ok(mut events) = self.events.write() {
             events.push(event);
-            
+
             // Auto-flush if buffer full
             if events.len() >= self.max_buffer_size {
                 let events_to_flush = std::mem::take(&mut *events);
@@ -250,34 +252,37 @@ impl TelemetryCollector {
             }
         }
     }
-    
+
     /// Get current statistics
     pub fn get_stats(&self) -> TelemetryStats {
         let total_analyzed = self.total_analyzed.load(Ordering::Relaxed);
         let total_threats = self.total_threats.load(Ordering::Relaxed);
         let total_latency = self.total_latency_ms.load(Ordering::Relaxed);
         let honeypots = self.honeypots_detected.load(Ordering::Relaxed);
-        
+
         let avg_latency = if total_analyzed > 0 {
             total_latency as f64 / total_analyzed as f64
         } else {
             0.0
         };
-        
-        let value_protected = self.total_value_wei
+
+        let value_protected = self
+            .total_value_wei
             .read()
             .map(|v| wei_to_eth(*v))
             .unwrap_or(0.0);
-        
-        let threats_by_type = self.threat_counts
+
+        let threats_by_type = self
+            .threat_counts
             .read()
             .map(|counts| {
-                counts.iter()
+                counts
+                    .iter()
                     .map(|(k, v)| (k.as_str().to_string(), *v))
                     .collect()
             })
             .unwrap_or_default();
-        
+
         TelemetryStats {
             total_analyzed,
             total_threats,
@@ -290,68 +295,62 @@ impl TelemetryCollector {
             estimated_usd_saved: 0.0, // Calculated at display time
         }
     }
-    
+
     /// Export current stats to JSON file
     pub fn export_stats_json(&self) -> Result<PathBuf, std::io::Error> {
         let stats = self.get_stats();
         let filename = format!("stats_{}.json", current_timestamp());
         let path = self.export_dir.join(filename);
-        
+
         let json = serde_json::to_string_pretty(&stats)?;
         fs::write(&path, json)?;
-        
+
         Ok(path)
     }
-    
+
     /// Export stats to CSV (append mode)
     pub fn export_stats_csv(&self) -> Result<PathBuf, std::io::Error> {
         let stats = self.get_stats();
         let path = self.export_dir.join("telemetry_history.csv");
-        
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
-        
+
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+
         // Write header if new file
         if file.metadata()?.len() == 0 {
             writeln!(file, "period_start,period_end,total_analyzed,total_threats,value_protected_eth,avg_latency_ms,honeypots_detected")?;
         }
-        
+
         write!(file, "{}", stats.to_csv_row())?;
-        
+
         Ok(path)
     }
-    
+
     /// Flush buffered events to disk
     fn flush_events(&self, events: &[TelemetryEvent]) -> Result<(), std::io::Error> {
         if events.is_empty() {
             return Ok(());
         }
-        
+
         let filename = format!("events_{}.jsonl", current_timestamp());
         let path = self.export_dir.join(filename);
-        
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
-        
+
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+
         for event in events {
             if let Ok(json) = serde_json::to_string(event) {
                 writeln!(file, "{}", json)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Generate marketing report
     pub fn generate_marketing_report(&self, eth_price_usd: f64) -> String {
         let stats = self.get_stats();
         stats.marketing_summary(eth_price_usd)
     }
-    
+
     /// Reset counters (for new reporting period)
     #[allow(dead_code)]
     pub fn reset(&self) {
@@ -359,15 +358,15 @@ impl TelemetryCollector {
         self.total_threats.store(0, Ordering::Relaxed);
         self.honeypots_detected.store(0, Ordering::Relaxed);
         self.total_latency_ms.store(0, Ordering::Relaxed);
-        
+
         if let Ok(mut value) = self.total_value_wei.write() {
             *value = U256::ZERO;
         }
-        
+
         if let Ok(mut counts) = self.threat_counts.write() {
             counts.clear();
         }
-        
+
         if let Ok(mut events) = self.events.write() {
             events.clear();
         }
@@ -413,12 +412,12 @@ impl WeeklyReportGenerator {
     pub fn new(collector: Arc<TelemetryCollector>) -> Self {
         Self { collector }
     }
-    
+
     /// Generate weekly summary for Discord/Telegram
     pub fn generate_social_post(&self, eth_price: f64) -> String {
         let stats = self.collector.get_stats();
         let usd_saved = stats.total_value_protected_eth * eth_price;
-        
+
         format!(
             r#"🦀 **RUSTER REVM WEEKLY REPORT**
 
@@ -471,7 +470,7 @@ mod tests {
             5,
             "Sell failed".to_string(),
         );
-        
+
         assert_eq!(event.threat_type, ThreatType::Honeypot);
         assert_eq!(event.value_at_risk_eth, 1.5); // Rounded
         assert_eq!(event.latency_ms, 25);
@@ -481,11 +480,11 @@ mod tests {
     #[test]
     fn test_collector_basic() {
         let collector = TelemetryCollector::new();
-        
+
         // Record some analyses
         collector.record_analysis(10);
         collector.record_analysis(20);
-        
+
         // Record a threat
         let event = TelemetryEvent::new(
             ThreatType::Honeypot,
@@ -495,7 +494,7 @@ mod tests {
             "Test".to_string(),
         );
         collector.record_threat(event);
-        
+
         let stats = collector.get_stats();
         assert_eq!(stats.total_analyzed, 3);
         assert_eq!(stats.total_threats, 1);
@@ -512,7 +511,7 @@ mod tests {
             avg_latency_ms: 23.5,
             ..Default::default()
         };
-        
+
         let json = stats.to_json();
         assert!(json.contains("1000"));
         assert!(json.contains("honeypots_detected"));
@@ -530,7 +529,7 @@ mod tests {
             period_end: 1704672000,   // Jan 8, 2024
             ..Default::default()
         };
-        
+
         let report = stats.marketing_summary(2500.0); // $2500/ETH
         assert!(report.contains("250.00 ETH"));
         assert!(report.contains("625000")); // USD saved (no comma in Rust format)

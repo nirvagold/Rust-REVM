@@ -1,9 +1,9 @@
 //! Transaction decoder module
 //! Parses DEX swap calldata to extract swap parameters
 
+use crate::types::SwapParams;
 use alloy_primitives::{Bytes, U256};
 use alloy_sol_types::{sol, SolCall};
-use crate::types::SwapParams;
 
 // Uniswap V2 Router function signatures
 sol! {
@@ -126,7 +126,8 @@ impl SwapDecoder {
     }
 
     fn try_decode_fee_on_transfer_eth_for_tokens(data: &[u8], value: U256) -> Option<SwapParams> {
-        let call = swapExactETHForTokensSupportingFeeOnTransferTokensCall::abi_decode(data, false).ok()?;
+        let call =
+            swapExactETHForTokensSupportingFeeOnTransferTokensCall::abi_decode(data, false).ok()?;
         Some(SwapParams {
             amount_in: value,
             amount_out_min: call.amountOutMin,
@@ -136,7 +137,8 @@ impl SwapDecoder {
     }
 
     fn try_decode_fee_on_transfer_tokens_for_eth(data: &[u8]) -> Option<SwapParams> {
-        let call = swapExactTokensForETHSupportingFeeOnTransferTokensCall::abi_decode(data, false).ok()?;
+        let call =
+            swapExactTokensForETHSupportingFeeOnTransferTokensCall::abi_decode(data, false).ok()?;
         Some(SwapParams {
             amount_in: call.amountIn,
             amount_out_min: call.amountOutMin,
@@ -146,7 +148,9 @@ impl SwapDecoder {
     }
 
     fn try_decode_fee_on_transfer_tokens_for_tokens(data: &[u8]) -> Option<SwapParams> {
-        let call = swapExactTokensForTokensSupportingFeeOnTransferTokensCall::abi_decode(data, false).ok()?;
+        let call =
+            swapExactTokensForTokensSupportingFeeOnTransferTokensCall::abi_decode(data, false)
+                .ok()?;
         Some(SwapParams {
             amount_in: call.amountIn,
             amount_out_min: call.amountOutMin,
@@ -157,7 +161,11 @@ impl SwapDecoder {
 
     /// Calculate implied slippage from swap params (in basis points)
     #[allow(dead_code)]
-    pub fn calculate_slippage_bps(amount_in: U256, amount_out_min: U256, expected_rate: U256) -> u64 {
+    pub fn calculate_slippage_bps(
+        amount_in: U256,
+        amount_out_min: U256,
+        expected_rate: U256,
+    ) -> u64 {
         if expected_rate.is_zero() || amount_in.is_zero() {
             return 0;
         }
@@ -172,7 +180,7 @@ impl SwapDecoder {
         let diff = expected_out.saturating_sub(amount_out_min);
         // Convert to basis points (multiply by 10000)
         let slippage = diff.saturating_mul(U256::from(10000)) / expected_out;
-        
+
         // Safe conversion - slippage should never exceed 10000 bps (100%)
         slippage.try_into().unwrap_or(10000)
     }
@@ -188,7 +196,8 @@ mod tests {
         let amount_out_min = U256::from(970_000_000_000_000_000u128); // 0.97 ETH equivalent
         let expected_rate = U256::from(1); // 1:1 rate
 
-        let slippage = SwapDecoder::calculate_slippage_bps(amount_in, amount_out_min, expected_rate);
+        let slippage =
+            SwapDecoder::calculate_slippage_bps(amount_in, amount_out_min, expected_rate);
         assert_eq!(slippage, 300); // 3% slippage
     }
 }

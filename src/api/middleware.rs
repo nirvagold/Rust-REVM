@@ -9,7 +9,7 @@ use axum::{
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 /// Rate limiter configuration
 pub struct RateLimitConfig {
@@ -24,8 +24,8 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            requests_per_window: 100,  // 100 requests
-            window_duration: Duration::from_secs(60), // per minute
+            requests_per_window: 100,                   // 100 requests
+            window_duration: Duration::from_secs(60),   // per minute
             cleanup_interval: Duration::from_secs(300), // cleanup every 5 minutes
         }
     }
@@ -49,35 +49,37 @@ impl RateLimiter {
             config,
         }
     }
-    
+
     /// Check if request is allowed, returns (allowed, remaining, reset_seconds)
     pub fn check(&self, key: &str) -> (bool, u32, u64) {
         let now = Instant::now();
-        
+
         // Trigger cleanup if needed (non-blocking check)
         self.maybe_cleanup(now);
-        
+
         let mut entry = self.requests.entry(key.to_string()).or_insert((0, now));
-        
+
         // Reset window if expired
         if now.duration_since(entry.1) > self.config.window_duration {
             entry.0 = 0;
             entry.1 = now;
         }
-        
+
         let remaining = self.config.requests_per_window.saturating_sub(entry.0);
-        let reset_secs = self.config.window_duration
+        let reset_secs = self
+            .config
+            .window_duration
             .saturating_sub(now.duration_since(entry.1))
             .as_secs();
-        
+
         if entry.0 >= self.config.requests_per_window {
             return (false, 0, reset_secs);
         }
-        
+
         entry.0 += 1;
         (true, remaining - 1, reset_secs)
     }
-    
+
     /// Check if cleanup is needed and perform it
     fn maybe_cleanup(&self, now: Instant) {
         // Quick read check first (non-blocking)
@@ -88,7 +90,7 @@ impl RateLimiter {
                 false
             }
         };
-        
+
         if should_cleanup {
             // Try to acquire write lock (non-blocking)
             if let Ok(mut last) = self.last_cleanup.try_write() {
@@ -100,16 +102,15 @@ impl RateLimiter {
             }
         }
     }
-    
+
     /// Remove expired entries to prevent memory growth
     fn cleanup_expired_entries(&self, now: Instant) {
         let before_count = self.requests.len();
         let ttl = self.config.window_duration * 2; // Keep entries for 2x window duration
-        
-        self.requests.retain(|_, (_, timestamp)| {
-            now.duration_since(*timestamp) < ttl
-        });
-        
+
+        self.requests
+            .retain(|_, (_, timestamp)| now.duration_since(*timestamp) < ttl);
+
         let removed = before_count - self.requests.len();
         if removed > 0 {
             debug!(
@@ -119,12 +120,12 @@ impl RateLimiter {
             );
         }
     }
-    
+
     /// Get current number of tracked keys (for monitoring)
     pub fn tracked_keys_count(&self) -> usize {
         self.requests.len()
     }
-    
+
     /// Force cleanup (for manual trigger or shutdown)
     pub fn force_cleanup(&self) {
         self.cleanup_expired_entries(Instant::now());
@@ -167,17 +168,15 @@ pub async fn auth_middleware(
     if request.uri().path() == "/health" || request.uri().path() == "/v1/health" {
         return Ok(next.run(request).await);
     }
-    
+
     // Check for API key
     let api_key = headers
         .get("X-API-Key")
         .or_else(|| headers.get("x-api-key"))
         .and_then(|v| v.to_str().ok());
-    
+
     match api_key {
-        Some(key) if validate_api_key(key) => {
-            Ok(next.run(request).await)
-        }
+        Some(key) if validate_api_key(key) => Ok(next.run(request).await),
         Some(_) => {
             warn!("Invalid API key attempted");
             Err(StatusCode::UNAUTHORIZED)
@@ -206,7 +205,7 @@ pub async fn rate_limit_middleware(
     if request.uri().path() == "/health" || request.uri().path() == "/v1/health" {
         return Ok(next.run(request).await);
     }
-    
+
     // Get rate limit key (API key or IP)
     let rate_key = headers
         .get("X-API-Key")
@@ -222,38 +221,35 @@ pub async fn rate_limit_middleware(
                 .unwrap_or("unknown")
                 .to_string()
         });
-    
+
     let (allowed, remaining, reset) = RATE_LIMITER.check(&rate_key);
-    
+
     if !allowed {
         warn!(key = %rate_key, "Rate limit exceeded");
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }
-    
+
     let mut response = next.run(request).await;
-    
+
     // Add rate limit headers
     let headers = response.headers_mut();
     headers.insert("X-RateLimit-Remaining", remaining.into());
     headers.insert("X-RateLimit-Reset", reset.into());
-    
+
     Ok(response)
 }
 
 /// Request logging middleware
-pub async fn logging_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn logging_middleware(request: Request, next: Next) -> Response {
     let start = Instant::now();
     let method = request.method().clone();
     let uri = request.uri().clone();
-    
+
     let response = next.run(request).await;
-    
+
     let latency = start.elapsed();
     let status = response.status();
-    
+
     info!(
         method = %method,
         uri = %uri,
@@ -261,6 +257,6 @@ pub async fn logging_middleware(
         latency_ms = %latency.as_millis(),
         "Request completed"
     );
-    
+
     response
 }

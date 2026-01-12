@@ -1,0 +1,138 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: 🔍 Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run cargo check
+        run: cargo check --all-targets --all-features
+
+  lint:
+    name: 🧹 Lint
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run Clippy (strict mode)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: 🧪 Test
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run tests
+        run: cargo test --all-features --verbose
+
+  build:
+    name: 🏗️ Build Release
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build release binary
+        run: cargo build --release --bin ruster_api
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruster_api
+          path: target/release/ruster_api
+          retention-days: 7
+
+  docker:
+    name: 🐳 Build & Push Docker
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: septianff73/ruster-api
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=
+            type=ref,event=branch
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

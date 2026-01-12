@@ -3,13 +3,13 @@
 
 #![allow(dead_code)]
 
-use alloy_primitives::{Address, Bytes, U256, B256};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use eyre::Result;
 use revm::{
     db::{CacheDB, EmptyDB},
     primitives::{
-        AccountInfo, TxEnv, BlockEnv, CfgEnvWithHandlerCfg, ExecutionResult,
-        Output, SpecId, TxKind, EnvWithHandlerCfg,
+        AccountInfo, BlockEnv, CfgEnvWithHandlerCfg, EnvWithHandlerCfg, ExecutionResult, Output,
+        SpecId, TxEnv, TxKind,
     },
     Evm,
 };
@@ -55,8 +55,9 @@ impl Simulator {
     }
 
     /// Simulate a transaction and return the result
+    #[allow(clippy::too_many_arguments)]
     pub fn simulate(
-        &self, 
+        &self,
         from: Address,
         to: Option<Address>,
         value: U256,
@@ -64,22 +65,31 @@ impl Simulator {
         gas_price: u128,
         input: Bytes,
         nonce: u64,
-        swap_params: Option<&SwapParams>
+        swap_params: Option<&SwapParams>,
     ) -> Result<SimulationResult> {
         let mut risks = Vec::new();
         let mut db = CacheDB::new(EmptyDB::default());
 
         // Load minimal account state
-        db.insert_account_info(from, AccountInfo {
-            balance: U256::from(100_000_000_000_000_000_000u128), // 100 ETH for simulation
-            nonce,
-            code_hash: B256::default(),
-            code: None,
-        });
+        db.insert_account_info(
+            from,
+            AccountInfo {
+                balance: U256::from(100_000_000_000_000_000_000u128), // 100 ETH for simulation
+                nonce,
+                code_hash: B256::default(),
+                code: None,
+            },
+        );
 
         // Record balances before
-        let from_balance_before = db.accounts.get(&from).map(|a| a.info.balance).unwrap_or_default();
-        let to_balance_before = to.and_then(|t| db.accounts.get(&t).map(|a| a.info.balance)).unwrap_or_default();
+        let from_balance_before = db
+            .accounts
+            .get(&from)
+            .map(|a| a.info.balance)
+            .unwrap_or_default();
+        let to_balance_before = to
+            .and_then(|t| db.accounts.get(&t).map(|a| a.info.balance))
+            .unwrap_or_default();
 
         // Build transaction environment
         let transact_to = match to {
@@ -98,7 +108,7 @@ impl Simulator {
             chain_id: Some(self.chain_id),
             ..Default::default()
         };
-        
+
         // Build block environment
         let block_env = BlockEnv {
             number: U256::from(19_000_000u64),
@@ -106,7 +116,7 @@ impl Simulator {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs())
-                    .unwrap_or(0)
+                    .unwrap_or(0),
             ),
             gas_limit: U256::from(30_000_000u64),
             basefee: U256::from(20_000_000_000u64),
@@ -124,34 +134,34 @@ impl Simulator {
             .build();
 
         let result = evm.transact();
-        
+
         // Drop EVM to release borrow
         drop(evm);
 
         let (success, gas_used, output) = match result {
-            Ok(result_and_state) => {
-                match result_and_state.result {
-                    ExecutionResult::Success { gas_used, output, .. } => {
-                        let output_bytes = match output {
-                            Output::Call(bytes) => bytes.to_vec(),
-                            Output::Create(bytes, _) => bytes.to_vec(),
-                        };
-                        (true, gas_used, output_bytes)
-                    }
-                    ExecutionResult::Revert { gas_used, output } => {
-                        risks.push(RiskFactor::SimulationFailed {
-                            reason: format!("Reverted: {}", hex::encode(&output)),
-                        });
-                        (false, gas_used, output.to_vec())
-                    }
-                    ExecutionResult::Halt { reason, gas_used } => {
-                        risks.push(RiskFactor::SimulationFailed {
-                            reason: format!("Halted: {:?}", reason),
-                        });
-                        (false, gas_used, Vec::new())
-                    }
+            Ok(result_and_state) => match result_and_state.result {
+                ExecutionResult::Success {
+                    gas_used, output, ..
+                } => {
+                    let output_bytes = match output {
+                        Output::Call(bytes) => bytes.to_vec(),
+                        Output::Create(bytes, _) => bytes.to_vec(),
+                    };
+                    (true, gas_used, output_bytes)
                 }
-            }
+                ExecutionResult::Revert { gas_used, output } => {
+                    risks.push(RiskFactor::SimulationFailed {
+                        reason: format!("Reverted: {}", hex::encode(&output)),
+                    });
+                    (false, gas_used, output.to_vec())
+                }
+                ExecutionResult::Halt { reason, gas_used } => {
+                    risks.push(RiskFactor::SimulationFailed {
+                        reason: format!("Halted: {:?}", reason),
+                    });
+                    (false, gas_used, Vec::new())
+                }
+            },
             Err(e) => {
                 risks.push(RiskFactor::SimulationFailed {
                     reason: format!("EVM error: {:?}", e),
@@ -173,18 +183,32 @@ impl Simulator {
 
         // Build balance changes map
         let mut balance_changes = HashMap::new();
-        let from_balance_after = db.accounts.get(&from).map(|a| a.info.balance).unwrap_or_default();
-        balance_changes.insert(from, BalanceChange {
-            before: from_balance_before,
-            after: from_balance_after,
-        });
-        
+        let from_balance_after = db
+            .accounts
+            .get(&from)
+            .map(|a| a.info.balance)
+            .unwrap_or_default();
+        balance_changes.insert(
+            from,
+            BalanceChange {
+                before: from_balance_before,
+                after: from_balance_after,
+            },
+        );
+
         if let Some(to_addr) = to {
-            let to_balance_after = db.accounts.get(&to_addr).map(|a| a.info.balance).unwrap_or_default();
-            balance_changes.insert(to_addr, BalanceChange {
-                before: to_balance_before,
-                after: to_balance_after,
-            });
+            let to_balance_after = db
+                .accounts
+                .get(&to_addr)
+                .map(|a| a.info.balance)
+                .unwrap_or_default();
+            balance_changes.insert(
+                to_addr,
+                BalanceChange {
+                    before: to_balance_before,
+                    after: to_balance_after,
+                },
+            );
         }
 
         Ok(SimulationResult {
@@ -201,11 +225,12 @@ impl Simulator {
 fn analyze_swap_risks(params: &SwapParams, risks: &mut Vec<RiskFactor>) {
     // Check for extremely low amount_out_min (high slippage tolerance)
     if !params.amount_in.is_zero() {
-        let ratio = params.amount_out_min
+        let ratio = params
+            .amount_out_min
             .saturating_mul(U256::from(10000))
             .checked_div(params.amount_in)
             .unwrap_or_default();
-        
+
         let ratio_u64: u64 = ratio.try_into().unwrap_or(0);
         if ratio_u64 < 9000 && ratio_u64 > 0 {
             let slippage_bps = 10000 - ratio_u64;
@@ -220,7 +245,8 @@ fn analyze_swap_risks(params: &SwapParams, risks: &mut Vec<RiskFactor>) {
     let value_eth = wei_to_eth(params.amount_in);
     if value_eth > 1.0 {
         let slippage_tolerance = if !params.amount_in.is_zero() {
-            let ratio = params.amount_out_min
+            let ratio = params
+                .amount_out_min
                 .saturating_mul(U256::from(100))
                 .checked_div(params.amount_in)
                 .unwrap_or_default();
@@ -244,7 +270,7 @@ fn analyze_swap_risks(params: &SwapParams, risks: &mut Vec<RiskFactor>) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    
+
     let deadline_secs: u64 = params.deadline.try_into().unwrap_or(0);
     if deadline_secs > now + 600 {
         risks.push(RiskFactor::SandwichTarget {

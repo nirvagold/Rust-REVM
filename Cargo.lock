@@ -3174,6 +3174,7 @@ dependencies = [
  "futures-util",
  "hex",
  "lazy_static",
+ "rand 0.8.5",
  "revm",
  "serde",
  "serde_json",

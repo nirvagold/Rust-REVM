@@ -1,7 +1,7 @@
-//! Integration tests for Mempool Sentry
+//! Integration tests for Ruster REVM
 
-use alloy_primitives::{Address, Bytes, U256, B256};
-use mempool_sentry::{
+use alloy_primitives::{Address, Bytes, B256, U256};
+use ruster_revm::{
     config::DexRouters,
     decoder::SwapDecoder,
     types::{AnalysisResult, RiskFactor, RiskLevel},
@@ -11,14 +11,20 @@ use std::str::FromStr;
 #[test]
 fn test_dex_router_detection() {
     let routers = DexRouters::default();
-    
+
     // Uniswap V2 Router should be detected
     let uniswap_v2 = Address::from_str("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap();
-    assert!(routers.is_dex_router(&uniswap_v2), "Uniswap V2 Router should be detected");
-    
+    assert!(
+        routers.is_dex_router(&uniswap_v2),
+        "Uniswap V2 Router should be detected"
+    );
+
     // Random address should not be detected
     let random = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
-    assert!(!routers.is_dex_router(&random), "Random address should not be DEX router");
+    assert!(
+        !routers.is_dex_router(&random),
+        "Random address should not be DEX router"
+    );
 }
 
 #[test]
@@ -36,26 +42,29 @@ fn test_analysis_result_risk_accumulation() {
     let target = Address::default();
     let value = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
     let gas_price = U256::from(20_000_000_000u64); // 20 gwei
-    
+
     let mut result = AnalysisResult::new(tx_hash, from, target, value, gas_price);
-    
+
     // Initially safe
     assert_eq!(result.risk_level, RiskLevel::Safe);
-    
+
     // Add low risk
     result.add_risk(RiskFactor::LargeValue { value_eth: 15.0 });
     assert_eq!(result.risk_level, RiskLevel::Low);
-    
+
     // Add medium risk - should upgrade
-    result.add_risk(RiskFactor::HighSlippage { expected_bps: 100, actual_bps: 400 });
+    result.add_risk(RiskFactor::HighSlippage {
+        expected_bps: 100,
+        actual_bps: 400,
+    });
     assert_eq!(result.risk_level, RiskLevel::Medium);
-    
+
     // Add critical risk - should upgrade to critical
-    result.add_risk(RiskFactor::SandwichTarget { 
-        reason: "Test sandwich".to_string() 
+    result.add_risk(RiskFactor::SandwichTarget {
+        reason: "Test sandwich".to_string(),
     });
     assert_eq!(result.risk_level, RiskLevel::Critical);
-    
+
     // Should have 3 risk factors
     assert_eq!(result.risk_factors.len(), 3);
 }
@@ -79,7 +88,7 @@ fn test_slippage_calculation() {
     let amount_in = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
     let amount_out_min = U256::from(970_000_000_000_000_000u128); // 0.97 ETH
     let expected_rate = U256::from(1);
-    
+
     let slippage = SwapDecoder::calculate_slippage_bps(amount_in, amount_out_min, expected_rate);
     assert_eq!(slippage, 300, "Should be 3% (300 bps) slippage");
 }
@@ -93,16 +102,30 @@ fn test_slippage_calculation_zero_input() {
 #[test]
 fn test_risk_factor_descriptions() {
     let factors = vec![
-        RiskFactor::HighSlippage { expected_bps: 100, actual_bps: 500 },
+        RiskFactor::HighSlippage {
+            expected_bps: 100,
+            actual_bps: 500,
+        },
         RiskFactor::HighTax { tax_bps: 1000 },
-        RiskFactor::SandwichTarget { reason: "Large swap".to_string() },
-        RiskFactor::Honeypot { reason: "Cannot sell".to_string(), buy_success: true, sell_success: false },
-        RiskFactor::UnusualGasPrice { gas_gwei: 200, avg_gwei: 30 },
+        RiskFactor::SandwichTarget {
+            reason: "Large swap".to_string(),
+        },
+        RiskFactor::Honeypot {
+            reason: "Cannot sell".to_string(),
+            buy_success: true,
+            sell_success: false,
+        },
+        RiskFactor::UnusualGasPrice {
+            gas_gwei: 200,
+            avg_gwei: 30,
+        },
         RiskFactor::LargeValue { value_eth: 50.0 },
         RiskFactor::UnverifiedContract,
-        RiskFactor::SimulationFailed { reason: "Reverted".to_string() },
+        RiskFactor::SimulationFailed {
+            reason: "Reverted".to_string(),
+        },
     ];
-    
+
     for factor in factors {
         let desc = factor.description();
         assert!(!desc.is_empty(), "Description should not be empty");
@@ -116,14 +139,26 @@ fn test_analysis_result_summary() {
     let target = Address::default();
     let value = U256::from(1_000_000_000_000_000_000u128);
     let gas_price = U256::from(20_000_000_000u64);
-    
+
     let mut result = AnalysisResult::new(tx_hash, from, target, value, gas_price);
-    result.add_risk(RiskFactor::HighSlippage { expected_bps: 100, actual_bps: 500 });
-    
+    result.add_risk(RiskFactor::HighSlippage {
+        expected_bps: 100,
+        actual_bps: 500,
+    });
+
     let summary = result.summary();
-    assert!(summary.contains("Risk:"), "Summary should contain risk level");
-    assert!(summary.contains("TX:"), "Summary should contain transaction hash");
-    assert!(summary.contains("From:"), "Summary should contain from address");
+    assert!(
+        summary.contains("Risk:"),
+        "Summary should contain risk level"
+    );
+    assert!(
+        summary.contains("TX:"),
+        "Summary should contain transaction hash"
+    );
+    assert!(
+        summary.contains("From:"),
+        "Summary should contain from address"
+    );
 }
 
 #[test]
@@ -134,7 +169,7 @@ fn test_wei_to_eth_conversion() {
     let target = Address::default();
     let value = U256::from(15_000_000_000_000_000_000u128); // 15 ETH
     let gas_price = U256::from(20_000_000_000u64);
-    
+
     let result = AnalysisResult::new(tx_hash, from, target, value, gas_price);
     // Value is stored correctly
     assert_eq!(result.value, value);

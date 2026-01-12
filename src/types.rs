@@ -30,7 +30,7 @@ impl RiskLevel {
             RiskLevel::Critical => "CRITICAL",
         }
     }
-    
+
     pub fn emoji(&self) -> &'static str {
         match self {
             RiskLevel::Safe => "✅",
@@ -52,7 +52,11 @@ pub enum RiskFactor {
     /// Potential sandwich attack target
     SandwichTarget { reason: String },
     /// Honeypot token detected (CRITICAL - cannot sell)
-    Honeypot { reason: String, buy_success: bool, sell_success: bool },
+    Honeypot {
+        reason: String,
+        buy_success: bool,
+        sell_success: bool,
+    },
     /// Unusual gas price (front-run indicator)
     UnusualGasPrice { gas_gwei: u64, avg_gwei: u64 },
     /// Large value transaction (whale alert)
@@ -62,22 +66,40 @@ pub enum RiskFactor {
     /// Simulation failed
     SimulationFailed { reason: String },
     /// High round-trip tax detected via simulation
-    HighRoundTripTax { buy_tax: f64, sell_tax: f64, total_loss: f64 },
+    HighRoundTripTax {
+        buy_tax: f64,
+        sell_tax: f64,
+        total_loss: f64,
+    },
 }
 
 impl RiskFactor {
     pub fn description(&self) -> String {
         match self {
-            RiskFactor::HighSlippage { expected_bps, actual_bps } => {
-                format!("High slippage: expected {}bps, actual {}bps", expected_bps, actual_bps)
+            RiskFactor::HighSlippage {
+                expected_bps,
+                actual_bps,
+            } => {
+                format!(
+                    "High slippage: expected {}bps, actual {}bps",
+                    expected_bps, actual_bps
+                )
             }
             RiskFactor::HighTax { tax_bps } => {
-                format!("High token tax: {}bps ({}%)", tax_bps, *tax_bps as f64 / 100.0)
+                format!(
+                    "High token tax: {}bps ({}%)",
+                    tax_bps,
+                    *tax_bps as f64 / 100.0
+                )
             }
             RiskFactor::SandwichTarget { reason } => {
                 format!("Sandwich attack target: {}", reason)
             }
-            RiskFactor::Honeypot { reason, buy_success, sell_success } => {
+            RiskFactor::Honeypot {
+                reason,
+                buy_success,
+                sell_success,
+            } => {
                 format!(
                     "🚨 HONEYPOT: {} | Buy: {} | Sell: {}",
                     reason,
@@ -95,7 +117,11 @@ impl RiskFactor {
             RiskFactor::SimulationFailed { reason } => {
                 format!("Simulation failed: {}", reason)
             }
-            RiskFactor::HighRoundTripTax { buy_tax, sell_tax, total_loss } => {
+            RiskFactor::HighRoundTripTax {
+                buy_tax,
+                sell_tax,
+                total_loss,
+            } => {
                 format!(
                     "High round-trip tax: Buy {:.2}% + Sell {:.2}% = {:.2}% total loss",
                     buy_tax, sell_tax, total_loss
@@ -129,7 +155,13 @@ pub struct AnalysisResult {
 }
 
 impl AnalysisResult {
-    pub fn new(tx_hash: B256, from: Address, target: Address, value: U256, gas_price: U256) -> Self {
+    pub fn new(
+        tx_hash: B256,
+        from: Address,
+        target: Address,
+        value: U256,
+        gas_price: U256,
+    ) -> Self {
         Self {
             tx_hash,
             risk_level: RiskLevel::Safe,
@@ -145,46 +177,58 @@ impl AnalysisResult {
                 .unwrap_or(0),
         }
     }
-    
+
     /// Add a risk factor and update risk level
     pub fn add_risk(&mut self, factor: RiskFactor) {
         let factor_risk = match &factor {
             RiskFactor::HighSlippage { actual_bps, .. } => {
-                if *actual_bps > 1000 { RiskLevel::Critical }
-                else if *actual_bps > 500 { RiskLevel::High }
-                else { RiskLevel::Medium }
+                if *actual_bps > 1000 {
+                    RiskLevel::Critical
+                } else if *actual_bps > 500 {
+                    RiskLevel::High
+                } else {
+                    RiskLevel::Medium
+                }
             }
             RiskFactor::HighTax { tax_bps } => {
-                if *tax_bps > 2000 { RiskLevel::Critical }
-                else if *tax_bps > 1000 { RiskLevel::High }
-                else { RiskLevel::Medium }
+                if *tax_bps > 2000 {
+                    RiskLevel::Critical
+                } else if *tax_bps > 1000 {
+                    RiskLevel::High
+                } else {
+                    RiskLevel::Medium
+                }
             }
             RiskFactor::SandwichTarget { .. } => RiskLevel::Critical,
             RiskFactor::Honeypot { .. } => RiskLevel::Critical,
             RiskFactor::HighRoundTripTax { total_loss, .. } => {
-                if *total_loss > 30.0 { RiskLevel::Critical }
-                else if *total_loss > 15.0 { RiskLevel::High }
-                else { RiskLevel::Medium }
+                if *total_loss > 30.0 {
+                    RiskLevel::Critical
+                } else if *total_loss > 15.0 {
+                    RiskLevel::High
+                } else {
+                    RiskLevel::Medium
+                }
             }
             RiskFactor::UnusualGasPrice { .. } => RiskLevel::Medium,
             RiskFactor::LargeValue { .. } => RiskLevel::Low,
             RiskFactor::UnverifiedContract => RiskLevel::Medium,
             RiskFactor::SimulationFailed { .. } => RiskLevel::High,
         };
-        
+
         // Update to highest risk level
         if (factor_risk as u8) > (self.risk_level as u8) {
             self.risk_level = factor_risk;
         }
-        
+
         self.risk_factors.push(factor);
     }
-    
+
     /// Set the analysis latency
     pub fn set_latency(&mut self, start: Instant) {
         self.latency_ms = start.elapsed().as_millis() as u64;
     }
-    
+
     /// Pretty print the analysis result
     pub fn summary(&self) -> String {
         let mut output = format!(
@@ -196,14 +240,14 @@ impl AnalysisResult {
         output.push_str(&format!("   From: {}\n", self.from));
         output.push_str(&format!("   To: {}\n", self.target));
         output.push_str(&format!("   Latency: {}ms\n", self.latency_ms));
-        
+
         if !self.risk_factors.is_empty() {
             output.push_str("   Factors:\n");
             for factor in &self.risk_factors {
                 output.push_str(&format!("     - {}\n", factor.description()));
             }
         }
-        
+
         output
     }
 }

@@ -1,6 +1,6 @@
 //! Risk Scoring Module
 //! Provides granular 0-100 risk scores instead of binary Safe/Honeypot
-//! 
+//!
 //! This allows users to make informed decisions in "gray areas"
 
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ pub struct RiskScore {
     pub recommendation: String,
     /// Detailed breakdown for transparency
     pub breakdown: Vec<ScoreFactor>,
-} 
+}
 
 /// Individual risk components
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -54,24 +54,25 @@ impl RiskScore {
     pub fn calculate(components: RiskComponents, factors: Vec<ScoreFactor>) -> Self {
         // Weighted average calculation
         let weights = [
-            (components.honeypot, 0.35),   // Honeypot is most critical
-            (components.tax, 0.25),         // Tax is second
-            (components.liquidity, 0.15),   // Liquidity matters
-            (components.contract, 0.10),    // Contract verification
+            (components.honeypot, 0.35),     // Honeypot is most critical
+            (components.tax, 0.25),          // Tax is second
+            (components.liquidity, 0.15),    // Liquidity matters
+            (components.contract, 0.10),     // Contract verification
             (components.mev_exposure, 0.15), // MEV risk
         ];
-        
-        let total: f32 = weights.iter()
+
+        let total: f32 = weights
+            .iter()
             .map(|(score, weight)| *score as f32 * weight)
             .sum();
-        
+
         let total = (total.round() as u8).min(100);
-        
+
         // Calculate confidence based on data availability
         let confidence = Self::calculate_confidence(&factors);
-        
+
         let recommendation = Self::generate_recommendation(total, confidence);
-        
+
         Self {
             total,
             components,
@@ -80,43 +81,44 @@ impl RiskScore {
             breakdown: factors,
         }
     }
-    
+
     /// Calculate confidence level based on available data
     fn calculate_confidence(factors: &[ScoreFactor]) -> u8 {
         if factors.is_empty() {
             return 30; // Low confidence without data
         }
-        
+
         // More factors = higher confidence
         let base_confidence = (factors.len() as u8 * 15).min(60);
-        
+
         // Check for simulation-based factors (higher confidence)
-        let has_simulation = factors.iter()
+        let has_simulation = factors
+            .iter()
             .any(|f| f.name.contains("simulation") || f.name.contains("REVM"));
-        
+
         let simulation_bonus = if has_simulation { 25 } else { 0 };
-        
+
         (base_confidence + simulation_bonus).min(95)
     }
-    
+
     /// Generate human-readable recommendation
     fn generate_recommendation(score: u8, confidence: u8) -> String {
         let risk_level = match score {
             0..=20 => "✅ LOW RISK",
-            21..=40 => "🟡 MODERATE RISK", 
+            21..=40 => "🟡 MODERATE RISK",
             41..=60 => "🟠 ELEVATED RISK",
             61..=80 => "🔴 HIGH RISK",
             81..=100 => "💀 CRITICAL RISK",
             _ => "❓ UNKNOWN",
         };
-        
+
         let confidence_note = match confidence {
             0..=40 => "(Low confidence - limited data)",
             41..=70 => "(Medium confidence)",
             71..=100 => "(High confidence - simulation verified)",
             _ => "",
         };
-        
+
         let action = match score {
             0..=20 => "Proceed with standard caution.",
             21..=40 => "Review transaction details before proceeding.",
@@ -125,15 +127,15 @@ impl RiskScore {
             81..=100 => "DO NOT PROCEED. Almost certain loss of funds.",
             _ => "Unable to assess.",
         };
-        
+
         format!("{} {} - {}", risk_level, confidence_note, action)
     }
-    
+
     /// Check if this is in the "gray area" requiring user decision
     pub fn is_gray_area(&self) -> bool {
         (30..=70).contains(&self.total) || self.confidence < 60
     }
-    
+
     /// Get color code for UI
     pub fn color_code(&self) -> &'static str {
         match self.total {
@@ -160,9 +162,14 @@ impl RiskScoreBuilder {
             components: RiskComponents::default(),
         }
     }
-    
+
     /// Add honeypot simulation result
-    pub fn with_honeypot_result(mut self, is_honeypot: bool, sell_success: bool, loss_percent: f64) -> Self {
+    pub fn with_honeypot_result(
+        mut self,
+        is_honeypot: bool,
+        sell_success: bool,
+        loss_percent: f64,
+    ) -> Self {
         let score = if is_honeypot {
             95
         } else if !sell_success {
@@ -178,7 +185,7 @@ impl RiskScoreBuilder {
         } else {
             5
         };
-        
+
         self.components.honeypot = score;
         self.factors.push(ScoreFactor {
             name: "REVM Honeypot simulation".to_string(),
@@ -190,10 +197,10 @@ impl RiskScoreBuilder {
                 loss_percent
             ),
         });
-        
+
         self
     }
-    
+
     /// Add tax analysis result
     pub fn with_tax_analysis(mut self, buy_tax: f64, sell_tax: f64) -> Self {
         let total_tax = buy_tax + sell_tax;
@@ -208,7 +215,7 @@ impl RiskScoreBuilder {
         } else {
             5
         };
-        
+
         self.components.tax = score;
         self.factors.push(ScoreFactor {
             name: "Tax analysis".to_string(),
@@ -216,10 +223,10 @@ impl RiskScoreBuilder {
             weight: 0.25,
             reason: format!("Buy tax: {:.1}%, Sell tax: {:.1}%", buy_tax, sell_tax),
         });
-        
+
         self
     }
-    
+
     /// Add slippage analysis
     pub fn with_slippage(mut self, slippage_bps: u64) -> Self {
         let score = if slippage_bps > 2000 {
@@ -233,37 +240,41 @@ impl RiskScoreBuilder {
         } else {
             10
         };
-        
+
         self.components.mev_exposure = score;
         self.factors.push(ScoreFactor {
             name: "Slippage/MEV exposure".to_string(),
             score,
             weight: 0.15,
-            reason: format!("Slippage tolerance: {}bps ({:.1}%)", slippage_bps, slippage_bps as f64 / 100.0),
+            reason: format!(
+                "Slippage tolerance: {}bps ({:.1}%)",
+                slippage_bps,
+                slippage_bps as f64 / 100.0
+            ),
         });
-        
+
         self
     }
-    
+
     /// Add contract verification status
     pub fn with_contract_verified(mut self, is_verified: bool) -> Self {
         let score = if is_verified { 10 } else { 60 };
-        
+
         self.components.contract = score;
         self.factors.push(ScoreFactor {
             name: "Contract verification".to_string(),
             score,
             weight: 0.10,
-            reason: if is_verified { 
-                "Contract source verified on Etherscan".to_string() 
-            } else { 
-                "Contract NOT verified - cannot audit code".to_string() 
+            reason: if is_verified {
+                "Contract source verified on Etherscan".to_string()
+            } else {
+                "Contract NOT verified - cannot audit code".to_string()
             },
         });
-        
+
         self
     }
-    
+
     /// Build final risk score
     pub fn build(self) -> RiskScore {
         RiskScore::calculate(self.components, self.factors)
@@ -288,7 +299,7 @@ mod tests {
             .with_slippage(200)
             .with_contract_verified(true)
             .build();
-        
+
         assert!(score.total <= 20);
         assert!(score.recommendation.contains("LOW RISK"));
     }
@@ -300,7 +311,7 @@ mod tests {
             .with_tax_analysis(50.0, 50.0)
             .with_slippage(2500)
             .build();
-        
+
         // Honeypot (95 * 0.35) + Tax (90 * 0.25) + MEV (90 * 0.15) = 33.25 + 22.5 + 13.5 = 69+
         assert!(score.total >= 60, "Score was {}", score.total);
         assert!(score.recommendation.contains("HIGH") || score.recommendation.contains("CRITICAL"));
@@ -312,7 +323,7 @@ mod tests {
             .with_honeypot_result(false, true, 25.0)
             .with_tax_analysis(10.0, 12.0)
             .build();
-        
+
         assert!(score.is_gray_area());
     }
 }
