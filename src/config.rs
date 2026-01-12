@@ -77,15 +77,31 @@ impl ChainId {
     }
 }
 
-/// Chain-specific configuration (WETH, Router, RPC)
+/// DEX Router info
+#[derive(Debug, Clone)]
+pub struct DexRouter {
+    pub name: String,
+    pub address: Address,
+}
+
+/// Chain-specific configuration (WETH, Routers, RPC)
 #[derive(Debug, Clone)]
 pub struct ChainConfig {
     pub chain_id: ChainId,
     pub name: String,
     pub symbol: String,
     pub weth: Address,
-    pub router: Address,
+    /// Multiple DEX routers to try (in order of preference)
+    pub routers: Vec<DexRouter>,
     pub rpc_url: String,
+}
+
+impl ChainConfig {
+    /// Get primary router (first in list)
+    #[allow(dead_code)]
+    pub fn primary_router(&self) -> Address {
+        self.routers.first().map(|r| r.address).unwrap_or_default()
+    }
 }
 
 impl ChainConfig {
@@ -129,7 +145,9 @@ impl ChainConfig {
         // Get Alchemy API key (from ALCHEMY_API_KEY or extracted from ETH_HTTP_URL)
         let alchemy_key = Self::get_alchemy_key();
 
+        // ============================================
         // Ethereum Mainnet
+        // ============================================
         let eth_rpc = std::env::var("ETH_HTTP_URL")
             .ok()
             .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(1, k)))
@@ -139,11 +157,16 @@ impl ChainConfig {
             name: "Ethereum".to_string(),
             symbol: "ETH".to_string(),
             weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".parse().unwrap(),
-            router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap(),
+            routers: vec![
+                DexRouter { name: "Uniswap V2".to_string(), address: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap() },
+                DexRouter { name: "SushiSwap".to_string(), address: "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F".parse().unwrap() },
+            ],
             rpc_url: eth_rpc,
         });
 
+        // ============================================
         // BNB Smart Chain
+        // ============================================
         let bsc_rpc = std::env::var("BSC_HTTP_URL")
             .ok()
             .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(56, k)))
@@ -153,11 +176,16 @@ impl ChainConfig {
             name: "BNB Smart Chain".to_string(),
             symbol: "BNB".to_string(),
             weth: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c".parse().unwrap(),
-            router: "0x10ED43C718714eb63d5aA57B78B54704E256024E".parse().unwrap(),
+            routers: vec![
+                DexRouter { name: "PancakeSwap V2".to_string(), address: "0x10ED43C718714eb63d5aA57B78B54704E256024E".parse().unwrap() },
+                DexRouter { name: "BiSwap".to_string(), address: "0x3a6d8cA21D1CF76F653A67577FA0D27453350dD8".parse().unwrap() },
+            ],
             rpc_url: bsc_rpc,
         });
 
+        // ============================================
         // Polygon
+        // ============================================
         let polygon_rpc = std::env::var("POLYGON_HTTP_URL")
             .ok()
             .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(137, k)))
@@ -167,11 +195,16 @@ impl ChainConfig {
             name: "Polygon".to_string(),
             symbol: "MATIC".to_string(),
             weth: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270".parse().unwrap(),
-            router: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff".parse().unwrap(),
+            routers: vec![
+                DexRouter { name: "QuickSwap".to_string(), address: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff".parse().unwrap() },
+                DexRouter { name: "SushiSwap".to_string(), address: "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".parse().unwrap() },
+            ],
             rpc_url: polygon_rpc,
         });
 
+        // ============================================
         // Arbitrum One
+        // ============================================
         let arb_rpc = std::env::var("ARBITRUM_HTTP_URL")
             .ok()
             .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(42161, k)))
@@ -181,11 +214,16 @@ impl ChainConfig {
             name: "Arbitrum One".to_string(),
             symbol: "ETH".to_string(),
             weth: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".parse().unwrap(),
-            router: "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".parse().unwrap(),
+            routers: vec![
+                DexRouter { name: "Camelot".to_string(), address: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d".parse().unwrap() },
+                DexRouter { name: "SushiSwap".to_string(), address: "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".parse().unwrap() },
+            ],
             rpc_url: arb_rpc,
         });
 
+        // ============================================
         // Optimism
+        // ============================================
         let op_rpc = std::env::var("OPTIMISM_HTTP_URL")
             .ok()
             .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(10, k)))
@@ -195,11 +233,15 @@ impl ChainConfig {
             name: "Optimism".to_string(),
             symbol: "ETH".to_string(),
             weth: "0x4200000000000000000000000000000000000006".parse().unwrap(),
-            router: "0x9c12939390052919aF3155f41Bf4160Fd3666A6f".parse().unwrap(),
+            routers: vec![
+                DexRouter { name: "Velodrome".to_string(), address: "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858".parse().unwrap() },
+            ],
             rpc_url: op_rpc,
         });
 
+        // ============================================
         // Avalanche C-Chain
+        // ============================================
         let avax_rpc = std::env::var("AVALANCHE_HTTP_URL")
             .ok()
             .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(43114, k)))
@@ -209,11 +251,16 @@ impl ChainConfig {
             name: "Avalanche C-Chain".to_string(),
             symbol: "AVAX".to_string(),
             weth: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7".parse().unwrap(),
-            router: "0x60aE616a2155Ee3d9A68541Ba4544862310933d4".parse().unwrap(),
+            routers: vec![
+                DexRouter { name: "TraderJoe".to_string(), address: "0x60aE616a2155Ee3d9A68541Ba4544862310933d4".parse().unwrap() },
+                DexRouter { name: "Pangolin".to_string(), address: "0xE54Ca86531e17Ef3616d22Ca28b0D458b6C89106".parse().unwrap() },
+            ],
             rpc_url: avax_rpc,
         });
 
+        // ============================================
         // Base
+        // ============================================
         let base_rpc = std::env::var("BASE_HTTP_URL")
             .ok()
             .or_else(|| alchemy_key.as_ref().and_then(|k| Self::alchemy_url(8453, k)))
@@ -223,7 +270,11 @@ impl ChainConfig {
             name: "Base".to_string(),
             symbol: "ETH".to_string(),
             weth: "0x4200000000000000000000000000000000000006".parse().unwrap(),
-            router: "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb".parse().unwrap(),
+            routers: vec![
+                DexRouter { name: "Aerodrome".to_string(), address: "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43".parse().unwrap() },
+                DexRouter { name: "BaseSwap".to_string(), address: "0x327Df1E6de05895d2ab08513aaDD9313Fe505d86".parse().unwrap() },
+                DexRouter { name: "SushiSwap".to_string(), address: "0x6BDED42c6DA8FBf0d2bA55B2fa120C5e0c8D7891".parse().unwrap() },
+            ],
             rpc_url: base_rpc,
         });
 
