@@ -9,6 +9,7 @@
 
 pub mod analyzer;
 pub mod api;
+pub mod cache;
 pub mod config;
 pub mod decoder;
 pub mod honeypot;
@@ -18,6 +19,7 @@ pub mod telemetry;
 pub mod types;
 
 pub use analyzer::MempoolAnalyzer;
+pub use cache::{CacheStats, HoneypotCache};
 pub use config::{DexRouters, SentryConfig};
 pub use decoder::SwapDecoder;
 pub use honeypot::{HoneypotDetector, HoneypotResult};

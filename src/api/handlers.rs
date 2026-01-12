@@ -11,6 +11,7 @@ use tokio::sync::Semaphore;
 use tracing::{info, error};
 
 use super::types::*;
+use crate::cache::HoneypotCache;
 use crate::honeypot::HoneypotDetector;
 use crate::risk_score::RiskScoreBuilder;
 use crate::telemetry::TelemetryCollector;
@@ -18,6 +19,7 @@ use crate::telemetry::TelemetryCollector;
 /// Shared application state
 pub struct AppState {
     pub telemetry: Arc<TelemetryCollector>,
+    pub cache: Arc<HoneypotCache>,
     pub start_time: Instant,
     pub batch_semaphore: Arc<Semaphore>,
 }
@@ -26,6 +28,7 @@ impl AppState {
     pub fn new(telemetry: Arc<TelemetryCollector>) -> Self {
         Self {
             telemetry,
+            cache: Arc::new(HoneypotCache::new()),
             start_time: Instant::now(),
             batch_semaphore: Arc::new(Semaphore::new(100)), // Max 100 concurrent batch items
         }
@@ -158,17 +161,44 @@ pub async fn check_honeypot(
         )
     })?;
 
-    // Parse test amount
+    // ============================================
+    // CACHE-FIRST: Check cache before RPC call
+    // ============================================
+    if let Some(cached_result) = state.cache.get(&req.token_address) {
+        info!("⚡ Returning cached result for {}", req.token_address);
+        
+        // Calculate risk score from cached result
+        let risk_score = calculate_risk_score(&cached_result);
+        
+        let data = HoneypotCheckData {
+            token_address: req.token_address,
+            is_honeypot: cached_result.is_honeypot || cached_result.sell_reverted,
+            risk_score,
+            buy_success: cached_result.buy_success,
+            sell_success: cached_result.sell_success,
+            buy_tax_percent: cached_result.buy_tax_percent,
+            sell_tax_percent: cached_result.sell_tax_percent,
+            total_loss_percent: cached_result.total_loss_percent,
+            reason: format!("{} (cached)", cached_result.reason),
+            simulation_latency_ms: 0, // Instant from cache
+        };
+
+        return Ok(Json(ApiResponse::success(
+            data,
+            start.elapsed().as_secs_f64() * 1000.0,
+        )));
+    }
+
+    // ============================================
+    // CACHE MISS: Perform RPC simulation
+    // ============================================
     let test_amount: f64 = req.test_amount_eth.parse().unwrap_or(0.1);
     let test_wei = U256::from((test_amount * 1e18) as u128);
 
-    // Run detection with verbose logging
-    info!("🔍 Starting REVM simulation for token: {}", req.token_address);
-    info!("   Test amount: {} ETH ({} wei)", test_amount, test_wei);
+    info!("🔍 CACHE MISS - Starting RPC simulation for: {}", req.token_address);
+    info!("   Test amount: {} ETH", test_amount);
     
     let detector = HoneypotDetector::mainnet();
-    
-    // Use async version to fetch real bytecode from RPC
     let result = detector.detect_async(token, test_wei).await;
 
     match &result {
@@ -178,50 +208,23 @@ pub async fn check_honeypot(
                   data.is_honeypot, data.buy_success, data.sell_success);
             info!("   buy_tax: {:.2}%, sell_tax: {:.2}%, total_loss: {:.2}%",
                   data.buy_tax_percent, data.sell_tax_percent, data.total_loss_percent);
-            info!("   reason: {}", data.reason);
         }
         Err(e) => {
             error!("❌ SIMULATION FAILED for {}: {:?}", req.token_address, e);
+            // DO NOT cache failed results per CEO directive
         }
     }
 
     match result {
         Ok(hp_result) => {
+            // ============================================
+            // CACHE SET: Store valid result
+            // ============================================
+            state.cache.set(&req.token_address, hp_result.clone());
+
             // Calculate risk score based on actual simulation results
-            // PERS v2 algorithm:
-            // - Sell reverted = 100 (confirmed honeypot)
-            // - Is honeypot = 95
-            // - Loss > 50% = 80 (extreme tax)
-            // - Loss > 30% = 60 (high tax)
-            // - Loss > 10% = 40 (medium tax)
-            // - Loss > 5% = 20 (low tax)
-            // - Loss <= 5% = 10 (safe)
-            // + Access control penalty only if loss is also high
-            let base_score = if hp_result.sell_reverted {
-                100 // CONFIRMED HONEYPOT - sell reverted
-            } else if hp_result.is_honeypot {
-                95
-            } else if hp_result.total_loss_percent > 50.0 {
-                80
-            } else if hp_result.total_loss_percent > 30.0 {
-                60
-            } else if hp_result.total_loss_percent > 10.0 {
-                40
-            } else if hp_result.total_loss_percent > 5.0 {
-                20
-            } else {
-                10 // Safe - low loss
-            };
-
-            // Only add access control penalty if there's also suspicious loss
-            let penalty = if hp_result.total_loss_percent > 5.0 {
-                hp_result.access_control_penalty as u32
-            } else {
-                0 // Ignore access control for low-loss tokens (likely legit)
-            };
-
-            // Add access control penalty (capped at 100)
-            let risk_score = (base_score + penalty).min(100) as u8;
+            // Calculate risk score
+            let risk_score = calculate_risk_score(&hp_result);
 
             // Record telemetry for honeypot checks
             let latency = start.elapsed().as_millis() as u64;
@@ -445,6 +448,7 @@ pub async fn batch_analyze(
 pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<ApiResponse<StatsData>> {
     let start = Instant::now();
     let stats = state.telemetry.get_stats();
+    let cache_stats = state.cache.stats();
 
     let data = StatsData {
         total_analyzed: stats.total_analyzed,
@@ -456,8 +460,47 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<ApiResponse<S
         api_version: env!("CARGO_PKG_VERSION").to_string(),
     };
 
+    // Log cache stats for CEO monitoring
+    info!("📊 Cache Stats: {} entries, {:.1}% hit rate ({} hits / {} misses)",
+          cache_stats.entries, cache_stats.hit_rate, cache_stats.hits, cache_stats.misses);
+
     Json(ApiResponse::success(
         data,
         start.elapsed().as_secs_f64() * 1000.0,
     ))
+}
+
+// ============================================
+// Helper Functions
+// ============================================
+
+/// Calculate risk score from HoneypotResult
+/// PERS v2 algorithm implementation
+fn calculate_risk_score(result: &crate::honeypot::HoneypotResult) -> u8 {
+    // Base score based on simulation results
+    let base_score = if result.sell_reverted {
+        100 // CONFIRMED HONEYPOT - sell reverted
+    } else if result.is_honeypot {
+        95
+    } else if result.total_loss_percent > 50.0 {
+        80 // Extreme tax
+    } else if result.total_loss_percent > 30.0 {
+        60 // High tax
+    } else if result.total_loss_percent > 10.0 {
+        40 // Medium tax
+    } else if result.total_loss_percent > 5.0 {
+        20 // Low tax
+    } else {
+        10 // Safe - minimal loss
+    };
+
+    // Only add access control penalty if there's suspicious loss
+    let penalty = if result.total_loss_percent > 5.0 {
+        result.access_control_penalty as u32
+    } else {
+        0 // Ignore for low-loss tokens (likely legit)
+    };
+
+    // Cap at 100
+    (base_score + penalty).min(100) as u8
 }
