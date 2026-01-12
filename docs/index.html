@@ -304,6 +304,7 @@ if result["success"]:
             const buyTax = data.buy_tax_percent || 0;
             const sellTax = data.sell_tax_percent || 0;
             const totalLoss = data.total_loss_percent || 0;
+            const buySuccess = data.buy_success !== false;
             const sellSuccess = data.sell_success !== false;
             const reason = data.reason || '';
             const tokenName = data.token_name || null;
@@ -313,13 +314,29 @@ if result["success"]:
             const nativeSymbol = data.native_symbol || 'ETH';
             const chainId = data.chain_id || 1;
 
+            // Check if it's a "no liquidity" case
+            const noLiquidity = reason.toLowerCase().includes('no liquidity') || 
+                               reason.toLowerCase().includes('no pair') ||
+                               (!buySuccess && !sellSuccess && !isHoneypot);
+
             // Get chain emoji
             const chainEmoji = {1:'🔷',56:'🟡',137:'🟣',42161:'🔵',10:'🔴',43114:'🔺',8453:'🔵'}[chainId] || '🔗';
 
             let status, statusColor, bgClass, glowClass;
             
-            if (isHoneypot || !sellSuccess || riskScore >= 80) {
+            // Priority: Honeypot > No Liquidity > Risk Score
+            if (isHoneypot) {
                 status = '🚨 HONEYPOT DETECTED';
+                statusColor = 'text-accent-red';
+                bgClass = 'bg-red-900/20 border-accent-red/50';
+                glowClass = 'glow-danger';
+            } else if (noLiquidity) {
+                status = '❓ NO LIQUIDITY';
+                statusColor = 'text-gray-400';
+                bgClass = 'bg-gray-900/20 border-gray-600';
+                glowClass = '';
+            } else if (riskScore >= 80) {
+                status = '🚨 CRITICAL RISK';
                 statusColor = 'text-accent-red';
                 bgClass = 'bg-red-900/20 border-accent-red/50';
                 glowClass = 'glow-danger';
@@ -409,14 +426,16 @@ if result["success"]:
             section.classList.remove('hidden');
             const chainEmojis = {1:'🔷',56:'🟡',137:'🟣',42161:'🔵',10:'🔴',43114:'🔺',8453:'🔵'};
             list.innerHTML = searchHistory.map(item => {
-                const isHoneypot = item.data.is_honeypot || !item.data.sell_success;
+                const isHoneypot = item.data.is_honeypot || false;
                 const riskScore = item.data.risk_score || 0;
+                const reason = item.data.reason || '';
+                const noLiquidity = reason.toLowerCase().includes('no liquidity') || reason.toLowerCase().includes('no pair');
                 const symbol = item.data.token_symbol || null;
                 const chainName = item.data.chain_name || 'Unknown';
                 const chainId = item.data.chain_id || 1;
                 const chainEmoji = chainEmojis[chainId] || '🔗';
-                const icon = isHoneypot ? '🚨' : riskScore >= 50 ? '⚠️' : '✅';
-                const cls = isHoneypot ? 'text-accent-red' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
+                const icon = isHoneypot ? '🚨' : noLiquidity ? '❓' : riskScore >= 50 ? '⚠️' : '✅';
+                const cls = isHoneypot ? 'text-accent-red' : noLiquidity ? 'text-gray-400' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
                 const displayName = symbol ? `<span class="text-accent-blue font-semibold">${symbol}</span>` : `<span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span>`;
                 const chainBadge = `<span class="text-xs text-gray-500 ml-2">${chainEmoji} ${chainName}</span>`;
                 return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span>${displayName}${chainBadge}</div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
