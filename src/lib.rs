@@ -20,7 +20,7 @@ pub mod types;
 
 pub use analyzer::MempoolAnalyzer;
 pub use cache::{CacheStats, HoneypotCache};
-pub use config::{DexRouters, SentryConfig};
+pub use config::{ChainConfig, ChainId, DexRouters, SentryConfig};
 pub use decoder::SwapDecoder;
 pub use honeypot::{HoneypotDetector, HoneypotResult, TokenInfo};
 pub use risk_score::{RiskComponents, RiskScore, RiskScoreBuilder};

@@ -84,18 +84,32 @@
             <!-- Search Box -->
             <div class="max-w-2xl mx-auto mb-8">
                 <div class="bg-dark-800 rounded-2xl p-6 border border-dark-600">
-                    <label class="block text-sm text-gray-400 mb-2">Contract Address (Ethereum Mainnet)</label>
-                    <div class="flex gap-3">
-                        <input type="text" id="tokenInput" 
-                            placeholder="0xdAC17F958D2ee523a2206206994597C13D831ec7" 
-                            class="flex-1 bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent-green transition font-mono text-sm">
-                        <button id="analyzeBtn" onclick="analyzeToken()"
-                            class="bg-gradient-to-r from-accent-green to-accent-blue px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition flex items-center gap-2 disabled:opacity-50">
-                            <span id="btnText">Analyze</span>
-                            <div id="btnSpinner" class="spinner hidden"></div>
-                        </button>
+                    <div class="flex gap-4 mb-4">
+                        <div class="flex-1">
+                            <label class="block text-sm text-gray-400 mb-2">Contract Address</label>
+                            <input type="text" id="tokenInput" 
+                                placeholder="0xdAC17F958D2ee523a2206206994597C13D831ec7" 
+                                class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent-green transition font-mono text-sm">
+                        </div>
+                        <div class="w-48">
+                            <label class="block text-sm text-gray-400 mb-2">Network</label>
+                            <select id="chainSelect" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-accent-green transition">
+                                <option value="1">🔷 Ethereum</option>
+                                <option value="56">🟡 BNB Chain</option>
+                                <option value="137">🟣 Polygon</option>
+                                <option value="42161">🔵 Arbitrum</option>
+                                <option value="10">🔴 Optimism</option>
+                                <option value="43114">🔺 Avalanche</option>
+                                <option value="8453">🔵 Base</option>
+                            </select>
+                        </div>
                     </div>
-                    <p class="text-xs text-yellow-500/80 mt-2">⚠️ Results cached for 5 min. For volatile tokens, re-check after a few minutes.</p>
+                    <button id="analyzeBtn" onclick="analyzeToken()"
+                        class="w-full bg-gradient-to-r from-accent-green to-accent-blue px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50">
+                        <span id="btnText">🔍 Analyze Token</span>
+                        <div id="btnSpinner" class="spinner hidden"></div>
+                    </button>
+                    <p class="text-xs text-yellow-500/80 mt-3 text-center">⚠️ Results cached for 5 min. For volatile tokens, re-check after a few minutes.</p>
                 </div>
             </div>
 
@@ -300,10 +314,12 @@ else:
 
         async function analyzeToken() {
             const input = document.getElementById('tokenInput');
+            const chainSelect = document.getElementById('chainSelect');
             const btn = document.getElementById('analyzeBtn');
             const btnText = document.getElementById('btnText');
             const btnSpinner = document.getElementById('btnSpinner');
             const address = input.value.trim();
+            const chainId = parseInt(chainSelect.value);
             
             if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
                 showError('Invalid address format. Must be 0x followed by 40 hex characters.');
@@ -318,7 +334,11 @@ else:
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token_address: address, test_amount_eth: "0.1" })
+                    body: JSON.stringify({ 
+                        token_address: address, 
+                        test_amount_eth: "0.1",
+                        chain_id: chainId
+                    })
                 });
                 const result = await response.json();
                 
@@ -332,7 +352,7 @@ else:
                 showError('Network error: ' + err.message);
             } finally {
                 btn.disabled = false;
-                btnText.textContent = 'Analyze';
+                btnText.textContent = '🔍 Analyze Token';
                 btnSpinner.classList.add('hidden');
             }
         }
@@ -352,6 +372,8 @@ else:
             const tokenName = data.token_name || null;
             const tokenSymbol = data.token_symbol || null;
             const tokenDecimals = data.token_decimals || null;
+            const chainName = data.chain_name || 'Ethereum';
+            const nativeSymbol = data.native_symbol || 'ETH';
 
             let status, statusColor, bgClass, glowClass;
             
@@ -383,7 +405,8 @@ else:
                 : tokenSymbol 
                     ? `<p class="text-xl font-semibold text-accent-blue">${tokenSymbol}</p>`
                     : '';
-            const decimalsDisplay = tokenDecimals !== null ? `<span class="text-xs text-gray-500 ml-2">${tokenDecimals} decimals</span>` : '';
+            const chainBadge = `<span class="inline-block px-2 py-1 bg-dark-700 rounded-full text-xs text-gray-300 mt-2">🔗 ${chainName} (${nativeSymbol})</span>`;
+            const decimalsDisplay = tokenDecimals !== null ? ` · ${tokenDecimals} decimals` : '';
 
             resultContainer.className = `rounded-2xl p-6 border transition-all duration-300 ${bgClass} ${glowClass}`;
             resultContainer.innerHTML = `
@@ -391,6 +414,7 @@ else:
                     <h3 class="text-2xl font-bold ${statusColor}">${status}</h3>
                     ${tokenDisplay}
                     <p class="text-gray-400 text-sm mt-1 font-mono">${address.slice(0,10)}...${address.slice(-8)}${decimalsDisplay}</p>
+                    ${chainBadge}
                 </div>
                 <div class="grid grid-cols-2 gap-4 mb-4">
                     <div class="bg-dark-800/50 rounded-xl p-4 text-center">
@@ -447,10 +471,12 @@ else:
                 const isHoneypot = item.data.is_honeypot || !item.data.sell_success;
                 const riskScore = item.data.risk_score || 0;
                 const symbol = item.data.token_symbol || null;
+                const chainName = item.data.chain_name || 'ETH';
                 const icon = isHoneypot ? '🚨' : riskScore >= 50 ? '⚠️' : '✅';
                 const cls = isHoneypot ? 'text-accent-red' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
                 const displayName = symbol ? `<span class="text-accent-blue font-semibold">${symbol}</span>` : `<span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span>`;
-                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span>${displayName}</div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
+                const chainBadge = `<span class="text-xs text-gray-500 ml-2">${chainName}</span>`;
+                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';document.getElementById('chainSelect').value='${item.data.chain_id || 1}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span>${displayName}${chainBadge}</div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
             }).join('');
         }
 

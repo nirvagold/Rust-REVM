@@ -177,10 +177,14 @@ impl HoneypotResult {
 #[allow(dead_code)]
 pub struct HoneypotDetector {
     /// Chain ID (1 = mainnet)
-    chain_id: u64,
-    /// WETH address
+    pub chain_id: u64,
+    /// Chain name (e.g., "Ethereum", "BNB Smart Chain")
+    pub chain_name: String,
+    /// Native token symbol (e.g., "ETH", "BNB")
+    pub native_symbol: String,
+    /// WETH/WBNB address
     weth: Address,
-    /// Uniswap V2 Router address
+    /// DEX Router address
     router: Address,
     /// HTTP RPC URL for fetching bytecode
     rpc_url: String,
@@ -195,20 +199,29 @@ enum SimSellResult {
 impl HoneypotDetector {
     /// Create detector for Ethereum mainnet
     pub fn mainnet() -> Self {
-        Self {
+        Self::for_chain(1).unwrap_or_else(|| Self {
             chain_id: 1,
-            // WETH on mainnet
-            weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-                .parse()
-                .unwrap(),
-            // Uniswap V2 Router
-            router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
-                .parse()
-                .unwrap(),
-            // Get RPC URL from environment
+            chain_name: "Ethereum".to_string(),
+            native_symbol: "ETH".to_string(),
+            weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".parse().unwrap(),
+            router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap(),
             rpc_url: std::env::var("ETH_HTTP_URL")
                 .unwrap_or_else(|_| "https://eth.llamarpc.com".to_string()),
-        }
+        })
+    }
+
+    /// Create detector for specific chain
+    pub fn for_chain(chain_id: u64) -> Option<Self> {
+        use crate::config::ChainConfig;
+        
+        ChainConfig::get(chain_id).map(|config| Self {
+            chain_id: config.chain_id as u64,
+            chain_name: config.name,
+            native_symbol: config.symbol,
+            weth: config.weth,
+            router: config.router,
+            rpc_url: config.rpc_url,
+        })
     }
 
     /// Create detector with custom addresses
@@ -216,6 +229,8 @@ impl HoneypotDetector {
     pub fn new(chain_id: u64, weth: Address, router: Address) -> Self {
         Self {
             chain_id,
+            chain_name: "Custom".to_string(),
+            native_symbol: "ETH".to_string(),
             weth,
             router,
             rpc_url: std::env::var("ETH_HTTP_URL")

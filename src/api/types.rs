@@ -184,6 +184,10 @@ pub struct HoneypotCheckRequest {
     pub token_address: String,
     #[serde(default = "default_test_amount")]
     pub test_amount_eth: String,
+    /// Chain ID (1 = Ethereum, 56 = BSC, 137 = Polygon, etc.)
+    /// Default: 1 (Ethereum)
+    #[serde(default = "default_chain_id")]
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -198,6 +202,12 @@ pub struct HoneypotCheckData {
     /// Token decimals (e.g., 18)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_decimals: Option<u8>,
+    /// Chain ID (1 = Ethereum, 56 = BSC, etc.)
+    pub chain_id: u64,
+    /// Chain name (e.g., "Ethereum", "BNB Smart Chain")
+    pub chain_name: String,
+    /// Native token symbol (e.g., "ETH", "BNB")
+    pub native_symbol: String,
     pub is_honeypot: bool,
     pub risk_score: u8,
     pub buy_success: bool,
