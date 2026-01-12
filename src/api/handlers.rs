@@ -178,28 +178,64 @@ pub async fn check_honeypot(
     })?;
 
     // ============================================
-    // AUTO-DETECT CHAIN if chain_id is 0 or not specified
-    // Uses DexScreener as "Route Discovery"
+    // AUTO-DETECT CHAIN & DEX via DexScreener
+    // This finds the actual DEX with liquidity
     // ============================================
-    let (effective_chain_id, auto_detected_name, auto_detected_symbol) = if req.chain_id == 0 {
-        info!("🔍 Auto-detecting chain for {}...", req.token_address);
+    let dexscreener = DexScreenerClient::new();
+    
+    let (effective_chain_id, detected_info) = if req.chain_id == 0 {
+        info!("🔍 Auto-detecting chain & DEX for {}...", req.token_address);
         
-        let dexscreener = DexScreenerClient::new();
         match dexscreener.auto_detect_token(&req.token_address).await {
             Ok(detected) => {
-                info!("✅ Auto-detected: {} ({}) on {} (chain_id: {})", 
+                info!("✅ Auto-detected: {} ({}) on {} via {}", 
                       detected.token_symbol.as_deref().unwrap_or("Unknown"),
                       detected.token_name.as_deref().unwrap_or("Unknown"),
-                      detected.chain_name, detected.chain_id);
-                (detected.chain_id, detected.token_name, detected.token_symbol)
+                      detected.chain_name,
+                      detected.best_dex.dex_name);
+                info!("   Liquidity: ${:.2}, Router: {:?}", 
+                      detected.best_dex.liquidity_usd,
+                      detected.best_dex.router_address);
+                (detected.chain_id, Some(detected))
             }
             Err(e) => {
-                warn!("⚠️ Auto-detect failed: {}. Defaulting to Ethereum.", e);
-                (1, None, None) // Default to Ethereum
+                warn!("⚠️ DexScreener failed: {}. Token may not be listed.", e);
+                (1, None) // Default to Ethereum, no DEX info
             }
         }
     } else {
-        (req.chain_id, None, None)
+        // Chain specified, but still try to get DEX info from DexScreener
+        info!("🔍 Looking up DEX info for {} on chain {}...", req.token_address, req.chain_id);
+        match dexscreener.get_pairs_for_chain(&req.token_address, req.chain_id).await {
+            Ok(pairs) if !pairs.is_empty() => {
+                let best = pairs.into_iter().next().unwrap();
+                let discovered = best.to_discovered_dex();
+                info!("✅ Found on {} with ${:.2} liquidity", discovered.dex_name, discovered.liquidity_usd);
+                
+                (req.chain_id, Some(crate::dexscreener::AutoDetectedToken {
+                    chain_id: req.chain_id,
+                    chain_name: crate::dexscreener::DexScreenerClient::chain_id_to_name_pub(req.chain_id).to_string(),
+                    best_dex: discovered,
+                    token_name: best.base_token.name,
+                    token_symbol: best.base_token.symbol,
+                    all_pairs: vec![],
+                }))
+            }
+            _ => {
+                info!("📭 No DexScreener data for chain {}", req.chain_id);
+                (req.chain_id, None)
+            }
+        }
+    };
+
+    // Extract info from DexScreener result
+    let (auto_detected_name, auto_detected_symbol, discovered_router) = match &detected_info {
+        Some(info) => (
+            info.token_name.clone(),
+            info.token_symbol.clone(),
+            info.best_dex.router_address.clone(),
+        ),
+        None => (None, None, None),
     };
 
     // Get detector for detected/specified chain
@@ -275,6 +311,21 @@ pub async fn check_honeypot(
 
     info!("🔍 CACHE MISS - Starting RPC simulation for: {} on {}", req.token_address, chain_name);
     info!("   Test amount: {} {}", test_amount, native_symbol);
+    
+    // If DexScreener found a router, add it as priority
+    let detector = if let Some(router_addr) = discovered_router {
+        if let Ok(router) = router_addr.parse::<Address>() {
+            let dex_name = detected_info.as_ref()
+                .map(|i| i.best_dex.dex_name.clone())
+                .unwrap_or_else(|| "DexScreener".to_string());
+            info!("🎯 Using DexScreener router: {} ({})", dex_name, router_addr);
+            detector.with_priority_router(dex_name, router)
+        } else {
+            detector
+        }
+    } else {
+        detector
+    };
     
     let result = detector.detect_async(token, test_wei).await;
 
