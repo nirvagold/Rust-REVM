@@ -189,6 +189,15 @@ pub struct HoneypotCheckRequest {
 #[derive(Debug, Serialize)]
 pub struct HoneypotCheckData {
     pub token_address: String,
+    /// Token name (e.g., "Tether USD")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_name: Option<String>,
+    /// Token symbol (e.g., "USDT")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_symbol: Option<String>,
+    /// Token decimals (e.g., 18)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_decimals: Option<u8>,
     pub is_honeypot: bool,
     pub risk_score: u8,
     pub buy_success: bool,

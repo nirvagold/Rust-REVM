@@ -349,6 +349,9 @@ else:
             const buySuccess = data.buy_success !== false;
             const sellSuccess = data.sell_success !== false;
             const reason = data.reason || '';
+            const tokenName = data.token_name || null;
+            const tokenSymbol = data.token_symbol || null;
+            const tokenDecimals = data.token_decimals || null;
 
             let status, statusColor, bgClass, glowClass;
             
@@ -374,11 +377,20 @@ else:
                 glowClass = 'glow-safe';
             }
 
+            // Token name/symbol display
+            const tokenDisplay = tokenName && tokenSymbol 
+                ? `<p class="text-xl font-semibold text-white">${tokenName} <span class="text-accent-blue">(${tokenSymbol})</span></p>` 
+                : tokenSymbol 
+                    ? `<p class="text-xl font-semibold text-accent-blue">${tokenSymbol}</p>`
+                    : '';
+            const decimalsDisplay = tokenDecimals !== null ? `<span class="text-xs text-gray-500 ml-2">${tokenDecimals} decimals</span>` : '';
+
             resultContainer.className = `rounded-2xl p-6 border transition-all duration-300 ${bgClass} ${glowClass}`;
             resultContainer.innerHTML = `
                 <div class="text-center mb-6">
                     <h3 class="text-2xl font-bold ${statusColor}">${status}</h3>
-                    <p class="text-gray-400 text-sm mt-1 font-mono">${address.slice(0,10)}...${address.slice(-8)}</p>
+                    ${tokenDisplay}
+                    <p class="text-gray-400 text-sm mt-1 font-mono">${address.slice(0,10)}...${address.slice(-8)}${decimalsDisplay}</p>
                 </div>
                 <div class="grid grid-cols-2 gap-4 mb-4">
                     <div class="bg-dark-800/50 rounded-xl p-4 text-center">
@@ -434,9 +446,11 @@ else:
             list.innerHTML = searchHistory.map(item => {
                 const isHoneypot = item.data.is_honeypot || !item.data.sell_success;
                 const riskScore = item.data.risk_score || 0;
+                const symbol = item.data.token_symbol || null;
                 const icon = isHoneypot ? '🚨' : riskScore >= 50 ? '⚠️' : '✅';
                 const cls = isHoneypot ? 'text-accent-red' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
-                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span><span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span></div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
+                const displayName = symbol ? `<span class="text-accent-blue font-semibold">${symbol}</span>` : `<span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span>`;
+                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span>${displayName}</div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
             }).join('');
         }
 

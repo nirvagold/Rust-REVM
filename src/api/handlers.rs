@@ -182,11 +182,18 @@ pub async fn check_honeypot(
     if let Some(cached_result) = state.cache.get(&req.token_address) {
         info!("⚡ Returning cached result for {}", req.token_address);
         
+        // Fetch token info (quick RPC calls)
+        let detector = HoneypotDetector::mainnet();
+        let token_info = detector.fetch_token_info(token).await;
+        
         // Calculate risk score from cached result
         let risk_score = calculate_risk_score(&cached_result);
         
         let data = HoneypotCheckData {
             token_address: req.token_address,
+            token_name: token_info.name,
+            token_symbol: token_info.symbol,
+            token_decimals: token_info.decimals,
             is_honeypot: cached_result.is_honeypot || cached_result.sell_reverted,
             risk_score,
             buy_success: cached_result.buy_success,
@@ -237,6 +244,10 @@ pub async fn check_honeypot(
             // ============================================
             state.cache.set(&req.token_address, hp_result.clone());
 
+            // Fetch token info (name, symbol, decimals)
+            let token_info = detector.fetch_token_info(token).await;
+            info!("📛 Token info: {:?}", token_info);
+
             // Calculate risk score based on actual simulation results
             // Calculate risk score
             let risk_score = calculate_risk_score(&hp_result);
@@ -259,6 +270,9 @@ pub async fn check_honeypot(
 
             let data = HoneypotCheckData {
                 token_address: req.token_address,
+                token_name: token_info.name,
+                token_symbol: token_info.symbol,
+                token_decimals: token_info.decimals,
                 is_honeypot: hp_result.is_honeypot || hp_result.sell_reverted,
                 risk_score,
                 buy_success: hp_result.buy_success,
