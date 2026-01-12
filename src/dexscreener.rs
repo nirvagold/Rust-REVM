@@ -39,6 +39,9 @@ pub struct DexPair {
     pub dex_id: String,
     /// Pair address
     pub pair_address: String,
+    /// Labels (e.g., ["v3"] for Uniswap V3)
+    #[serde(default)]
+    pub labels: Vec<String>,
     /// Base token info
     pub base_token: DexToken,
     /// Quote token info (usually WETH/WBNB/USDT)
@@ -49,6 +52,22 @@ pub struct DexPair {
     pub price_usd: Option<String>,
     /// 24h volume
     pub volume: Option<DexVolume>,
+}
+
+impl DexPair {
+    /// Check if this pair is V2 compatible (not V3, not Velodrome/Aerodrome style)
+    pub fn is_v2_compatible(&self) -> bool {
+        // V3 pairs have "v3" or "v4" label
+        let is_v3 = self.labels.iter().any(|l| l.contains("v3") || l.contains("v4"));
+        
+        // Velodrome/Aerodrome style DEXes are not V2 compatible
+        let is_velodrome_style = matches!(
+            self.dex_id.to_lowercase().as_str(),
+            "velodrome" | "aerodrome" | "ramses" | "thena" | "equalizer"
+        );
+        
+        !is_v3 && !is_velodrome_style
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -155,6 +174,7 @@ impl DexScreenerClient {
 
     /// 🎯 AUTO-DETECT: Find which chain a token is on and best DEX to use
     /// This is the "Unified Entry Point" - user only needs to provide address
+    /// Prefers V2-compatible DEXes over V3
     pub async fn auto_detect_token(&self, token_address: &str) -> Result<AutoDetectedToken> {
         let pairs = self.get_token_pairs(token_address).await?;
         
@@ -162,15 +182,27 @@ impl DexScreenerClient {
             return Err(eyre!("Token not found on any supported chain"));
         }
 
-        // Get the pair with highest liquidity
-        let best_pair = pairs.first().ok_or_else(|| eyre!("No pairs found"))?;
+        // Separate V2 and V3 pairs
+        let v2_pairs: Vec<&DexPair> = pairs.iter().filter(|p| p.is_v2_compatible()).collect();
+        let all_pairs_count = pairs.len();
+        let v2_pairs_count = v2_pairs.len();
+
+        // Prefer V2 pairs, fallback to any pair for chain detection
+        let best_pair = if !v2_pairs.is_empty() {
+            v2_pairs[0]
+        } else {
+            // No V2 pairs, use first pair for chain detection but warn
+            warn!("⚠️ No V2-compatible pairs found! Token may only be on V3/Velodrome-style DEXes");
+            &pairs[0]
+        };
         
         let chain_id = Self::dexscreener_name_to_chain_id(&best_pair.chain_id);
         let chain_name = Self::chain_id_to_name(chain_id);
 
-        // Convert all pairs to DiscoveredDex
-        let all_pairs: Vec<DiscoveredDex> = pairs.iter()
+        // Convert V2 pairs to DiscoveredDex (only V2 compatible ones)
+        let all_discovered: Vec<DiscoveredDex> = pairs.iter()
             .filter(|p| Self::dexscreener_name_to_chain_id(&p.chain_id) == chain_id)
+            .filter(|p| p.is_v2_compatible())
             .map(|p| p.to_discovered_dex())
             .collect();
 
@@ -179,8 +211,9 @@ impl DexScreenerClient {
         info!("🎯 Auto-detected: {} on {} (chain_id: {})", 
               best_pair.base_token.symbol.as_deref().unwrap_or("Unknown"),
               chain_name, chain_id);
-        info!("   Best DEX: {} with ${:.2} liquidity", 
-              best_dex.dex_name, best_dex.liquidity_usd);
+        info!("   Total pairs: {}, V2-compatible: {}", all_pairs_count, v2_pairs_count);
+        info!("   Best DEX: {} with ${:.2} liquidity (V2: {})", 
+              best_dex.dex_name, best_dex.liquidity_usd, best_pair.is_v2_compatible());
 
         Ok(AutoDetectedToken {
             chain_id,
@@ -188,7 +221,10 @@ impl DexScreenerClient {
             best_dex,
             token_name: best_pair.base_token.name.clone(),
             token_symbol: best_pair.base_token.symbol.clone(),
-            all_pairs,
+            all_pairs: all_discovered,
+            // Add info about V3-only tokens
+            has_v2_liquidity: v2_pairs_count > 0,
+            total_pairs: all_pairs_count,
         })
     }
 
@@ -260,14 +296,18 @@ pub struct AutoDetectedToken {
     pub chain_id: u64,
     /// Chain name (Ethereum, BSC, etc.)
     pub chain_name: String,
-    /// Best DEX to use (highest liquidity)
+    /// Best DEX to use (highest liquidity, prefers V2)
     pub best_dex: DiscoveredDex,
     /// Token name from DexScreener
     pub token_name: Option<String>,
     /// Token symbol from DexScreener
     pub token_symbol: Option<String>,
-    /// All available pairs (sorted by liquidity)
+    /// All available V2-compatible pairs (sorted by liquidity)
     pub all_pairs: Vec<DiscoveredDex>,
+    /// Whether token has V2-compatible liquidity
+    pub has_v2_liquidity: bool,
+    /// Total number of pairs (including V3)
+    pub total_pairs: usize,
 }
 
 impl DexPair {

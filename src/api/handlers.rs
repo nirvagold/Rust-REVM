@@ -183,7 +183,7 @@ pub async fn check_honeypot(
     // ============================================
     let dexscreener = DexScreenerClient::new();
     
-    let (effective_chain_id, detected_info) = if req.chain_id == 0 {
+    let (effective_chain_id, detected_info, is_v3_only) = if req.chain_id == 0 {
         info!("🔍 Auto-detecting chain & DEX for {}...", req.token_address);
         
         match dexscreener.auto_detect_token(&req.token_address).await {
@@ -193,14 +193,16 @@ pub async fn check_honeypot(
                       detected.token_name.as_deref().unwrap_or("Unknown"),
                       detected.chain_name,
                       detected.best_dex.dex_name);
-                info!("   Liquidity: ${:.2}, Router: {:?}", 
+                info!("   Liquidity: ${:.2}, Router: {:?}, V2: {}", 
                       detected.best_dex.liquidity_usd,
-                      detected.best_dex.router_address);
-                (detected.chain_id, Some(detected))
+                      detected.best_dex.router_address,
+                      detected.has_v2_liquidity);
+                let v3_only = !detected.has_v2_liquidity && detected.total_pairs > 0;
+                (detected.chain_id, Some(detected), v3_only)
             }
             Err(e) => {
                 warn!("⚠️ DexScreener failed: {}. Token may not be listed.", e);
-                (1, None) // Default to Ethereum, no DEX info
+                (1, None, false) // Default to Ethereum, no DEX info
             }
         }
     } else {
@@ -208,9 +210,17 @@ pub async fn check_honeypot(
         info!("🔍 Looking up DEX info for {} on chain {}...", req.token_address, req.chain_id);
         match dexscreener.get_pairs_for_chain(&req.token_address, req.chain_id).await {
             Ok(pairs) if !pairs.is_empty() => {
-                let best = pairs.into_iter().next().unwrap();
+                // Check if any V2 pairs exist
+                let v2_pairs: Vec<_> = pairs.iter().filter(|p| p.is_v2_compatible()).collect();
+                let best = if !v2_pairs.is_empty() {
+                    v2_pairs[0].clone()
+                } else {
+                    pairs[0].clone()
+                };
                 let discovered = best.to_discovered_dex();
-                info!("✅ Found on {} with ${:.2} liquidity", discovered.dex_name, discovered.liquidity_usd);
+                let v3_only = v2_pairs.is_empty();
+                info!("✅ Found on {} with ${:.2} liquidity (V3-only: {})", 
+                      discovered.dex_name, discovered.liquidity_usd, v3_only);
                 
                 (req.chain_id, Some(crate::dexscreener::AutoDetectedToken {
                     chain_id: req.chain_id,
@@ -219,11 +229,13 @@ pub async fn check_honeypot(
                     token_name: best.base_token.name,
                     token_symbol: best.base_token.symbol,
                     all_pairs: vec![],
-                }))
+                    has_v2_liquidity: !v3_only,
+                    total_pairs: pairs.len(),
+                }), v3_only)
             }
             _ => {
                 info!("📭 No DexScreener data for chain {}", req.chain_id);
-                (req.chain_id, None)
+                (req.chain_id, None, false)
             }
         }
     };
@@ -237,6 +249,42 @@ pub async fn check_honeypot(
         ),
         None => (None, None, None),
     };
+
+    // If token is V3-only, return early with appropriate message
+    if is_v3_only {
+        let chain_name = detected_info.as_ref()
+            .map(|i| i.chain_name.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+        let dex_name = detected_info.as_ref()
+            .map(|i| i.best_dex.dex_name.clone())
+            .unwrap_or_else(|| "Unknown DEX".to_string());
+        
+        info!("⚠️ Token only available on V3/Velodrome-style DEX: {}", dex_name);
+        
+        let data = HoneypotCheckData {
+            token_address: req.token_address,
+            token_name: auto_detected_name,
+            token_symbol: auto_detected_symbol,
+            token_decimals: None,
+            chain_id: effective_chain_id,
+            chain_name,
+            native_symbol: "ETH".to_string(),
+            is_honeypot: false,
+            risk_score: 0,
+            buy_success: false,
+            sell_success: false,
+            buy_tax_percent: 0.0,
+            sell_tax_percent: 0.0,
+            total_loss_percent: 0.0,
+            reason: format!("Token only available on {} (V3/Velodrome-style) - not supported yet. Use DEX directly.", dex_name),
+            simulation_latency_ms: start.elapsed().as_millis() as u64,
+        };
+
+        return Ok(Json(ApiResponse::success(
+            data,
+            start.elapsed().as_secs_f64() * 1000.0,
+        )));
+    }
 
     // Get detector for detected/specified chain
     let detector = HoneypotDetector::for_chain(effective_chain_id).ok_or_else(|| {
