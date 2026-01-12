@@ -5,9 +5,7 @@
 //! Run with: cargo run --example telemetry_demo
 
 use alloy_primitives::U256;
-use ruster_revm::telemetry::{
-    TelemetryCollector, TelemetryEvent, ThreatType, WeeklyReportGenerator,
-};
+use ruster_revm::{TelemetryCollector, TelemetryEvent, ThreatType};
 use std::sync::Arc;
 
 fn main() {
@@ -137,8 +135,8 @@ fn main() {
     println!("📱 SOCIAL MEDIA POST (Discord/Telegram)");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    let report_gen = WeeklyReportGenerator::new(collector.clone());
-    println!("{}", report_gen.generate_social_post(eth_price));
+    // Generate marketing report directly from collector
+    println!("{}", collector.generate_marketing_report(eth_price));
     println!();
 
     // ============================================

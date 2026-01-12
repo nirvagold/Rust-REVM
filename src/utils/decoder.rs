@@ -1,7 +1,7 @@
 //! Transaction decoder module
 //! Parses DEX swap calldata to extract swap parameters
 
-use crate::types::SwapParams;
+use crate::models::types::SwapParams;
 use alloy_primitives::{Bytes, U256};
 use alloy_sol_types::{sol, SolCall};
 

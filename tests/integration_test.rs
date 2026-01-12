@@ -2,9 +2,9 @@
 
 use alloy_primitives::{Address, Bytes, B256, U256};
 use ruster_revm::{
-    config::DexRouters,
-    decoder::SwapDecoder,
-    types::{AnalysisResult, RiskFactor, RiskLevel},
+    DexRouters,
+    SwapDecoder,
+    AnalysisResult, RiskFactor, RiskLevel,
 };
 use std::str::FromStr;
 

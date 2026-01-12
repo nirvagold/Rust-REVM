@@ -5,20 +5,14 @@
 //! - High tax tokens (fee-on-transfer)
 //! - Sandwich attack targets
 //! - MEV exposure risks
+//!
+//! CEO Directive: Uses new modular architecture
 
-mod analyzer;
-mod config;
-mod decoder;
-mod honeypot;
-mod simulator;
-mod telemetry;
-mod types;
+// Import from library (new structure)
+use ruster_revm::{MempoolAnalyzer, SentryConfig, TelemetryCollector};
 
-use analyzer::MempoolAnalyzer;
-use config::SentryConfig;
 use eyre::Result;
 use std::sync::Arc;
-use telemetry::TelemetryCollector;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 

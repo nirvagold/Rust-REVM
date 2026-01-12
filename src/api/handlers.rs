@@ -11,11 +11,11 @@ use tokio::sync::Semaphore;
 use tracing::{info, error, warn};
 
 use super::types::*;
-use crate::cache::HoneypotCache;
-use crate::dexscreener::DexScreenerClient;
-use crate::honeypot::HoneypotDetector;
-use crate::risk_score::RiskScoreBuilder;
-use crate::telemetry::TelemetryCollector;
+use crate::utils::cache::HoneypotCache;
+use crate::providers::dexscreener::DexScreenerClient;
+use crate::core::honeypot::HoneypotDetector;
+use crate::core::risk_score::RiskScoreBuilder;
+use crate::utils::telemetry::TelemetryCollector;
 
 /// Shared application state
 pub struct AppState {
@@ -131,7 +131,7 @@ pub async fn analyze_token(
     // Record telemetry - track threats properly
     let latency = start.elapsed().as_millis() as u64;
     if is_threat {
-        use crate::telemetry::{TelemetryEvent, ThreatType};
+        use crate::utils::telemetry::{TelemetryEvent, ThreatType};
         let event = TelemetryEvent::new(
             ThreatType::Honeypot,
             U256::from((test_amount * 1e18) as u128),
@@ -222,9 +222,9 @@ pub async fn check_honeypot(
                 info!("✅ Found on {} with ${:.2} liquidity (V3-only: {})", 
                       discovered.dex_name, discovered.liquidity_usd, v3_only);
                 
-                (req.chain_id, Some(crate::dexscreener::AutoDetectedToken {
+                (req.chain_id, Some(crate::providers::dexscreener::AutoDetectedToken {
                     chain_id: req.chain_id,
-                    chain_name: crate::dexscreener::DexScreenerClient::chain_id_to_name_pub(req.chain_id).to_string(),
+                    chain_name: crate::providers::dexscreener::DexScreenerClient::chain_id_to_name_pub(req.chain_id).to_string(),
                     best_dex: discovered,
                     token_name: best.base_token.name,
                     token_symbol: best.base_token.symbol,
@@ -362,7 +362,7 @@ pub async fn check_honeypot(
     
     // If DexScreener found a router, add it as priority
     let detector = if let Some(router_addr) = discovered_router {
-        if let Ok(router) = router_addr.parse::<Address>() {
+        if let Ok(router) = router_addr.parse::<alloy_primitives::Address>() {
             let dex_name = detected_info.as_ref()
                 .map(|i| i.best_dex.dex_name.clone())
                 .unwrap_or_else(|| "DexScreener".to_string());
@@ -413,7 +413,7 @@ pub async fn check_honeypot(
             // Record telemetry for honeypot checks
             let latency = start.elapsed().as_millis() as u64;
             if hp_result.is_honeypot || hp_result.sell_reverted {
-                use crate::telemetry::{TelemetryEvent, ThreatType};
+                use crate::utils::telemetry::{TelemetryEvent, ThreatType};
                 let event = TelemetryEvent::new(
                     ThreatType::Honeypot,
                     U256::from((test_amount * 1e18) as u128),
@@ -599,7 +599,7 @@ pub async fn batch_analyze(
         .count();
 
     // Record batch telemetry
-    use crate::telemetry::{TelemetryEvent, ThreatType};
+    use crate::utils::telemetry::{TelemetryEvent, ThreatType};
     for result in &results {
         if result.is_honeypot.unwrap_or(false) {
             let event = TelemetryEvent::new(
@@ -666,7 +666,7 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<ApiResponse<S
 
 /// Calculate risk score from HoneypotResult
 /// PERS v2 algorithm implementation
-fn calculate_risk_score(result: &crate::honeypot::HoneypotResult) -> u8 {
+fn calculate_risk_score(result: &crate::core::honeypot::HoneypotResult) -> u8 {
     // Special case: No liquidity found - not necessarily dangerous
     // Token might just trade on a different DEX
     if !result.buy_success && !result.sell_success && !result.is_honeypot && !result.sell_reverted {

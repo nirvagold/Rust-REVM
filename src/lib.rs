@@ -7,33 +7,57 @@
 //! - Sandwich attack targets
 //! - MEV exposure risks
 //!
+//! # Architecture (Post Clean Sweep)
+//!
+//! ```text
+//! src/
+//! ├── core/           # Business logic: REVM Engine, Honeypot Detection
+//! ├── providers/      # Data sources: RPC, DexScreener
+//! ├── api/            # REST API: Axum handlers, routes, middleware
+//! ├── utils/          # Helpers: Cache, Decoder, Telemetry, Constants
+//! ├── models/         # Data structures: Types, Config, Errors
+//! ├── main.rs         # CLI entry point
+//! └── lib.rs          # Module exports (this file)
+//! ```
+//!
 //! CEO Executive Order: Multi-Chain Alchemy Integration
 //! - Dynamic URL construction from single ALCHEMY_API_KEY
 //! - Multi-tier RPC fallback for resilience
 //! - Exponential backoff retry logic
 //! - Prepared for Solana support
 
-pub mod analyzer;
-pub mod api;
-pub mod cache;
-pub mod config;
-pub mod decoder;
-pub mod dexscreener;
-pub mod honeypot;
-pub mod risk_score;
-pub mod rpc;
-pub mod simulator;
-pub mod telemetry;
-pub mod types;
+// ============================================
+// MODULE DECLARATIONS
+// ============================================
 
-pub use analyzer::MempoolAnalyzer;
-pub use cache::{CacheStats, HoneypotCache};
-pub use config::{ChainConfig, ChainId, DexRouters, SentryConfig};
-pub use decoder::SwapDecoder;
-pub use dexscreener::{DexScreenerClient, DexPair, DiscoveredDex, AutoDetectedToken};
-pub use honeypot::{HoneypotDetector, HoneypotResult, TokenInfo};
-pub use risk_score::{RiskComponents, RiskScore, RiskScoreBuilder};
-pub use rpc::{RpcProvider, RpcManager, AlchemyNetwork};
-pub use simulator::Simulator;
-pub use telemetry::{TelemetryCollector, TelemetryEvent, TelemetryStats, ThreatType};
-pub use types::{AnalysisResult, RiskFactor, RiskLevel, SwapParams};
+pub mod api;
+pub mod core;
+pub mod models;
+pub mod providers;
+pub mod utils;
+
+// ============================================
+// RE-EXPORTS FOR BACKWARD COMPATIBILITY
+// CEO Directive: Existing code must not break!
+// ============================================
+
+// Core exports
+pub use core::analyzer::MempoolAnalyzer;
+pub use core::honeypot::{HoneypotDetector, HoneypotResult, TokenInfo};
+pub use core::risk_score::{RiskComponents, RiskScore, RiskScoreBuilder};
+pub use core::simulator::Simulator;
+
+// Models exports
+pub use models::config::{ChainConfig, ChainId, DexRouters, SentryConfig};
+pub use models::errors::{AppError, AppResult, ErrorCode};
+pub use models::types::{AnalysisResult, RiskFactor, RiskLevel, SwapParams};
+
+// Providers exports
+pub use providers::dexscreener::{AutoDetectedToken, DexPair, DexScreenerClient, DiscoveredDex};
+pub use providers::rpc::{AlchemyNetwork, RpcManager, RpcProvider};
+
+// Utils exports
+pub use utils::cache::{CacheStats, HoneypotCache};
+pub use utils::constants::*;
+pub use utils::decoder::SwapDecoder;
+pub use utils::telemetry::{TelemetryCollector, TelemetryEvent, TelemetryStats, ThreatType};

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, debug};
 
-use crate::honeypot::HoneypotResult;
+use crate::core::honeypot::HoneypotResult;
 
 /// Default TTL: 5 menit (300 detik)
 const DEFAULT_TTL_SECS: u64 = 300;

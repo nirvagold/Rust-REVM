@@ -10,8 +10,8 @@
 //!   RUSTER_HOST - Server host (default: 0.0.0.0)
 //!   RUST_LOG    - Log level (default: info)
 
-use ruster_revm::api::{create_router, handlers::AppState, middleware::start_cleanup_task};
-use ruster_revm::telemetry::TelemetryCollector;
+use ruster_revm::api::{create_router, handlers::AppState, start_cleanup_task};
+use ruster_revm::TelemetryCollector;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;

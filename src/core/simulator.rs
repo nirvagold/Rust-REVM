@@ -15,7 +15,8 @@ use revm::{
 };
 use std::collections::HashMap;
 
-use crate::types::{RiskFactor, SwapParams};
+use crate::models::types::{RiskFactor, SwapParams};
+use crate::utils::constants::wei_to_eth;
 
 /// Simulation result containing execution outcome and detected risks
 #[derive(Debug)]
@@ -279,11 +280,7 @@ fn analyze_swap_risks(params: &SwapParams, risks: &mut Vec<RiskFactor>) {
     }
 }
 
-/// Convert wei to ETH
-fn wei_to_eth(wei: U256) -> f64 {
-    let wei_u128: u128 = wei.try_into().unwrap_or(u128::MAX);
-    wei_u128 as f64 / 1e18
-}
+// CEO Directive: wei_to_eth moved to utils/constants.rs
 
 #[cfg(test)]
 mod tests {
