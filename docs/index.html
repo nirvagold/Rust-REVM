@@ -159,15 +159,17 @@
                     body: JSON.stringify({ token_address: address, test_amount_eth: "0.1" })
                 });
 
-                const data = await response.json();
+                const result = await response.json();
+                console.log('API Response:', result); // Debug log
                 
-                if (data.success && data.data) {
-                    displayResult(data.data, address);
-                    addToHistory(address, data.data);
+                if (result.success && result.data) {
+                    displayResult(result.data, address);
+                    addToHistory(address, result.data);
                 } else {
-                    showError(data.error?.message || 'Analysis failed');
+                    showError(result.error?.message || 'Analysis failed');
                 }
             } catch (err) {
+                console.error('Fetch error:', err);
                 showError('Network error: ' + err.message);
             } finally {
                 btn.disabled = false;
@@ -180,21 +182,33 @@
             const resultCard = document.getElementById('resultCard');
             const resultContainer = document.getElementById('resultContainer');
             
-            const isHoneypot = data.is_honeypot;
+            console.log('Display data:', data); // Debug log
+            
+            // Extract fields from API response
+            const isHoneypot = data.is_honeypot || false;
             const riskScore = data.risk_score || 0;
             const buyTax = data.buy_tax_percent || 0;
             const sellTax = data.sell_tax_percent || 0;
+            const totalLoss = data.total_loss_percent || 0;
+            const buySuccess = data.buy_success !== false;
+            const sellSuccess = data.sell_success !== false;
             const reason = data.reason || '';
 
             let status, statusColor, bgClass, glowClass;
             
-            if (isHoneypot || riskScore >= 80) {
+            // Improved detection logic
+            if (isHoneypot || !sellSuccess || riskScore >= 80) {
                 status = '🚨 HONEYPOT DETECTED';
                 statusColor = 'text-accent-red';
                 bgClass = 'bg-red-900/20 border-accent-red/50';
                 glowClass = 'glow-danger';
-            } else if (riskScore >= 50) {
+            } else if (riskScore >= 50 || totalLoss > 30) {
                 status = '⚠️ HIGH RISK';
+                statusColor = 'text-accent-yellow';
+                bgClass = 'bg-yellow-900/20 border-accent-yellow/50';
+                glowClass = '';
+            } else if (riskScore >= 30 || totalLoss > 10) {
+                status = '⚠️ MEDIUM RISK';
                 statusColor = 'text-accent-yellow';
                 bgClass = 'bg-yellow-900/20 border-accent-yellow/50';
                 glowClass = '';
@@ -227,7 +241,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-4 mb-4">
                     <div class="bg-dark-800/50 rounded-xl p-4">
                         <p class="text-gray-400 text-sm">Buy Tax</p>
                         <p class="text-xl font-semibold ${buyTax > 10 ? 'text-accent-yellow' : 'text-white'}">${buyTax.toFixed(2)}%</p>
@@ -238,7 +252,25 @@
                     </div>
                 </div>
 
-                ${reason ? `<p class="text-gray-400 text-sm mt-4 text-center">${reason}</p>` : ''}
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-dark-800/50 rounded-xl p-4">
+                        <p class="text-gray-400 text-sm">Buy</p>
+                        <p class="text-xl font-semibold ${buySuccess ? 'text-accent-green' : 'text-accent-red'}">${buySuccess ? '✓ Success' : '✗ Failed'}</p>
+                    </div>
+                    <div class="bg-dark-800/50 rounded-xl p-4">
+                        <p class="text-gray-400 text-sm">Sell</p>
+                        <p class="text-xl font-semibold ${sellSuccess ? 'text-accent-green' : 'text-accent-red'}">${sellSuccess ? '✓ Success' : '✗ Failed'}</p>
+                    </div>
+                </div>
+
+                ${totalLoss > 0 ? `
+                <div class="bg-dark-800/50 rounded-xl p-4 mt-4">
+                    <p class="text-gray-400 text-sm">Total Loss (Round Trip)</p>
+                    <p class="text-xl font-semibold ${totalLoss > 20 ? 'text-accent-red' : totalLoss > 10 ? 'text-accent-yellow' : 'text-white'}">${totalLoss.toFixed(2)}%</p>
+                </div>
+                ` : ''}
+
+                ${reason ? `<p class="text-gray-400 text-sm mt-4 text-center italic">"${reason}"</p>` : ''}
             `;
 
             resultCard.classList.remove('hidden');
@@ -275,9 +307,10 @@
 
             section.classList.remove('hidden');
             list.innerHTML = searchHistory.map(item => {
-                const isHoneypot = item.data.is_honeypot;
-                const statusIcon = isHoneypot ? '🚨' : '✅';
-                const statusClass = isHoneypot ? 'text-accent-red' : 'text-accent-green';
+                const isHoneypot = item.data.is_honeypot || !item.data.sell_success;
+                const riskScore = item.data.risk_score || 0;
+                const statusIcon = isHoneypot ? '🚨' : riskScore >= 50 ? '⚠️' : '✅';
+                const statusClass = isHoneypot ? 'text-accent-red' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
                 return `
                     <div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700 transition"
                          onclick="document.getElementById('tokenInput').value='${item.address}'; analyzeToken();">
@@ -285,7 +318,7 @@
                             <span class="${statusClass}">${statusIcon}</span>
                             <span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span>
                         </div>
-                        <span class="text-gray-500 text-xs">${item.data.risk_score}/100</span>
+                        <span class="text-gray-500 text-xs">${riskScore}/100</span>
                     </div>
                 `;
             }).join('');

@@ -80,9 +80,9 @@ pub async fn analyze_token(
     let test_amount: f64 = req.test_amount_eth.parse().unwrap_or(0.1);
     let test_wei = U256::from((test_amount * 1e18) as u128);
 
-    // Run honeypot detection
+    // Run honeypot detection (async with RPC)
     let detector = HoneypotDetector::mainnet();
-    let hp_result = detector.detect(token, test_wei, None, None, None, None);
+    let hp_result = detector.detect_async(token, test_wei).await;
 
     // Build risk score
     let (risk_score, is_threat) = match hp_result {
@@ -167,7 +167,9 @@ pub async fn check_honeypot(
     info!("   Test amount: {} ETH ({} wei)", test_amount, test_wei);
     
     let detector = HoneypotDetector::mainnet();
-    let result = detector.detect(token, test_wei, None, None, None, None);
+    
+    // Use async version to fetch real bytecode from RPC
+    let result = detector.detect_async(token, test_wei).await;
 
     match &result {
         Ok(data) => {
@@ -305,7 +307,7 @@ pub async fn batch_analyze(
             match token {
                 Ok(token) => {
                     let detector = HoneypotDetector::mainnet();
-                    match detector.detect(token, wei, None, None, None, None) {
+                    match detector.detect_async(token, wei).await {
                         Ok(result) => {
                             // PERS v2: sell_reverted = 100, + access_control_penalty
                             let base_score = if result.sell_reverted {
