@@ -8,10 +8,11 @@ use axum::{
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
-use tracing::{info, error};
+use tracing::{info, error, warn};
 
 use super::types::*;
 use crate::cache::HoneypotCache;
+use crate::dexscreener::DexScreenerClient;
 use crate::honeypot::HoneypotDetector;
 use crate::risk_score::RiskScoreBuilder;
 use crate::telemetry::TelemetryCollector;
@@ -176,14 +177,39 @@ pub async fn check_honeypot(
         )
     })?;
 
-    // Get detector for requested chain (default: Ethereum)
-    let detector = HoneypotDetector::for_chain(req.chain_id).ok_or_else(|| {
+    // ============================================
+    // AUTO-DETECT CHAIN if chain_id is 0 or not specified
+    // Uses DexScreener as "Route Discovery"
+    // ============================================
+    let (effective_chain_id, auto_detected_name, auto_detected_symbol) = if req.chain_id == 0 {
+        info!("🔍 Auto-detecting chain for {}...", req.token_address);
+        
+        let dexscreener = DexScreenerClient::new();
+        match dexscreener.auto_detect_token(&req.token_address).await {
+            Ok(detected) => {
+                info!("✅ Auto-detected: {} ({}) on {} (chain_id: {})", 
+                      detected.token_symbol.as_deref().unwrap_or("Unknown"),
+                      detected.token_name.as_deref().unwrap_or("Unknown"),
+                      detected.chain_name, detected.chain_id);
+                (detected.chain_id, detected.token_name, detected.token_symbol)
+            }
+            Err(e) => {
+                warn!("⚠️ Auto-detect failed: {}. Defaulting to Ethereum.", e);
+                (1, None, None) // Default to Ethereum
+            }
+        }
+    } else {
+        (req.chain_id, None, None)
+    };
+
+    // Get detector for detected/specified chain
+    let detector = HoneypotDetector::for_chain(effective_chain_id).ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
             Json(ApiResponse::error(
                 ApiError::bad_request(format!(
                     "Unsupported chain_id: {}. Supported: 1 (ETH), 56 (BSC), 137 (Polygon), 42161 (Arbitrum), 10 (Optimism), 43114 (Avalanche), 8453 (Base)",
-                    req.chain_id
+                    effective_chain_id
                 )),
                 start.elapsed().as_secs_f64() * 1000.0,
             )),
@@ -197,7 +223,7 @@ pub async fn check_honeypot(
     info!("🔗 Chain: {} ({}) - {}", chain_name, chain_id, native_symbol);
 
     // Cache key includes chain_id for multi-chain support
-    let cache_key = format!("{}:{}", req.chain_id, req.token_address.to_lowercase());
+    let cache_key = format!("{}:{}", chain_id, req.token_address.to_lowercase());
 
     // ============================================
     // CACHE-FIRST: Check cache before RPC call
@@ -205,17 +231,22 @@ pub async fn check_honeypot(
     if let Some(cached_result) = state.cache.get(&cache_key) {
         info!("⚡ Returning cached result for {} on {}", req.token_address, chain_name);
         
-        // Fetch token info (quick RPC calls)
-        let token_info = detector.fetch_token_info(token).await;
+        // Use auto-detected name/symbol if available, otherwise fetch from RPC
+        let (token_name, token_symbol, token_decimals) = if auto_detected_name.is_some() {
+            (auto_detected_name, auto_detected_symbol, None)
+        } else {
+            let token_info = detector.fetch_token_info(token).await;
+            (token_info.name, token_info.symbol, token_info.decimals)
+        };
         
         // Calculate risk score from cached result
         let risk_score = calculate_risk_score(&cached_result);
         
         let data = HoneypotCheckData {
             token_address: req.token_address,
-            token_name: token_info.name,
-            token_symbol: token_info.symbol,
-            token_decimals: token_info.decimals,
+            token_name,
+            token_symbol,
+            token_decimals,
             chain_id,
             chain_name,
             native_symbol,
@@ -268,9 +299,14 @@ pub async fn check_honeypot(
             // ============================================
             state.cache.set(&cache_key, hp_result.clone());
 
-            // Fetch token info (name, symbol, decimals)
-            let token_info = detector.fetch_token_info(token).await;
-            info!("📛 Token info: {:?}", token_info);
+            // Use auto-detected name/symbol if available, otherwise fetch from RPC
+            let (token_name, token_symbol, token_decimals) = if auto_detected_name.is_some() {
+                (auto_detected_name, auto_detected_symbol, None)
+            } else {
+                let token_info = detector.fetch_token_info(token).await;
+                info!("📛 Token info: {:?}", token_info);
+                (token_info.name, token_info.symbol, token_info.decimals)
+            };
 
             // Calculate risk score based on actual simulation results
             let risk_score = calculate_risk_score(&hp_result);
@@ -293,9 +329,9 @@ pub async fn check_honeypot(
 
             let data = HoneypotCheckData {
                 token_address: req.token_address,
-                token_name: token_info.name,
-                token_symbol: token_info.symbol,
-                token_decimals: token_info.decimals,
+                token_name,
+                token_symbol,
+                token_decimals,
                 chain_id,
                 chain_name,
                 native_symbol,

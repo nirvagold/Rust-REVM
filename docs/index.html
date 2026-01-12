@@ -94,6 +94,7 @@
                         <div class="w-48">
                             <label class="block text-sm text-gray-400 mb-2">Network</label>
                             <select id="chainSelect" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-accent-green transition">
+                                <option value="0">🔮 Auto-Detect</option>
                                 <option value="1">🔷 Ethereum</option>
                                 <option value="56">🟡 BNB Chain</option>
                                 <option value="137">🟣 Polygon</option>
@@ -180,29 +181,43 @@
                         <span class="text-gray-500 text-sm ml-auto">Honeypot detection</span>
                     </div>
                     <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Simulate buy/sell to detect honeypot tokens.</p>
-                        <h4 class="text-sm font-semibold text-gray-300 mb-2">Request</h4>
+                        <p class="text-gray-400 text-sm mb-3">Simulate buy/sell to detect honeypot tokens. Supports auto chain detection!</p>
+                        <h4 class="text-sm font-semibold text-gray-300 mb-2">Request Parameters</h4>
+                        <table class="w-full text-sm mb-4">
+                            <thead><tr class="text-left text-gray-400 border-b border-dark-600"><th class="pb-2">Field</th><th class="pb-2">Type</th><th class="pb-2">Description</th></tr></thead>
+                            <tbody class="text-gray-300">
+                                <tr class="border-b border-dark-700"><td class="py-2"><code>token_address</code></td><td>string</td><td>Token contract address (required)</td></tr>
+                                <tr class="border-b border-dark-700"><td class="py-2"><code>test_amount_eth</code></td><td>string</td><td>Test amount in native token (default: "0.1")</td></tr>
+                                <tr><td class="py-2"><code>chain_id</code></td><td>number</td><td>Chain ID. <span class="text-accent-green">0 = Auto-detect via DexScreener</span> (default: 0)</td></tr>
+                            </tbody>
+                        </table>
+                        <h4 class="text-sm font-semibold text-gray-300 mb-2">Example (Auto-Detect Chain)</h4>
                         <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check \
   -H "Content-Type: application/json" \
   -d '{
-    "token_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-    "test_amount_eth": "0.1"
+    "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
   }'</code></pre>
+                        <p class="text-xs text-gray-500 mt-2">☝️ USDC on Base - chain will be auto-detected!</p>
                         <h4 class="text-sm font-semibold text-gray-300 mb-2 mt-4">Response</h4>
                         <pre><code class="text-gray-300">{
   "success": true,
   "data": {
-    "token_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "token_name": "USD Coin",
+    "token_symbol": "USDC",
+    "chain_id": 8453,
+    "chain_name": "Base",
+    "native_symbol": "ETH",
     "is_honeypot": false,
     "risk_score": 10,
     "buy_success": true,
     "sell_success": true,
-    "buy_tax_percent": 0.30,
-    "sell_tax_percent": 0.30,
-    "total_loss_percent": 0.60,
+    "buy_tax_percent": 0.15,
+    "sell_tax_percent": 0.15,
+    "total_loss_percent": 0.30,
     "reason": "Token passed buy/sell simulation"
   },
-  "latency_ms": 1250.5
+  "latency_ms": 1850.5
 }</code></pre>
                     </div>
                 </div>

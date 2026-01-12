@@ -185,8 +185,8 @@ pub struct HoneypotCheckRequest {
     #[serde(default = "default_test_amount")]
     pub test_amount_eth: String,
     /// Chain ID (1 = Ethereum, 56 = BSC, 137 = Polygon, etc.)
-    /// Default: 1 (Ethereum)
-    #[serde(default = "default_chain_id")]
+    /// Default: 0 (auto-detect via DexScreener)
+    #[serde(default)]
     pub chain_id: u64,
 }
 
