@@ -25,6 +25,9 @@
         .glow-danger { animation: pulse-danger 1s infinite; }
         .spinner { border: 3px solid #30363d; border-top: 3px solid #00d395; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .tab-active { border-bottom: 2px solid #00d395; color: #00d395; }
+        pre { background: #161b22; border-radius: 8px; padding: 16px; overflow-x: auto; }
+        code { font-family: 'Fira Code', monospace; font-size: 14px; }
     </style>
 </head>
 <body class="bg-dark-900 text-gray-100 min-h-screen">
@@ -51,70 +54,225 @@
         </div>
     </header>
 
+    <!-- Tabs -->
+    <div class="border-b border-dark-600 bg-dark-800/30">
+        <div class="max-w-6xl mx-auto px-4">
+            <nav class="flex gap-8">
+                <button onclick="showTab('tester')" id="tab-tester" class="py-4 text-sm font-medium tab-active">
+                    🔍 Token Tester
+                </button>
+                <button onclick="showTab('docs')" id="tab-docs" class="py-4 text-sm font-medium text-gray-400 hover:text-white">
+                    📖 API Documentation
+                </button>
+            </nav>
+        </div>
+    </div>
+
     <main class="max-w-6xl mx-auto px-4 py-8">
-        <!-- Hero Section -->
-        <div class="text-center mb-12">
-            <h2 class="text-4xl font-bold mb-4 bg-gradient-to-r from-accent-green to-accent-blue bg-clip-text text-transparent">
-                Detect Honeypot Tokens Instantly
-            </h2>
-            <p class="text-gray-400 max-w-2xl mx-auto">
-                Advanced EVM simulation powered by Rust REVM. Analyze any token contract before trading to protect your funds from scams.
-            </p>
-        </div>
+        <!-- Token Tester Tab -->
+        <div id="content-tester">
+            <!-- Hero -->
+            <div class="text-center mb-8">
+                <h2 class="text-3xl font-bold mb-3 bg-gradient-to-r from-accent-green to-accent-blue bg-clip-text text-transparent">
+                    Detect Honeypot Tokens Instantly
+                </h2>
+                <p class="text-gray-400 max-w-xl mx-auto">
+                    Simulate buy/sell transactions on real blockchain state before trading.
+                </p>
+            </div>
 
-        <!-- Search Box -->
-        <div class="max-w-2xl mx-auto mb-8">
-            <div class="bg-dark-800 rounded-2xl p-6 border border-dark-600">
-                <label class="block text-sm text-gray-400 mb-2">Contract Address</label>
-                <div class="flex gap-3">
-                    <input type="text" id="tokenInput" 
-                        placeholder="0x..." 
-                        class="flex-1 bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent-green transition">
-                    <button id="analyzeBtn" onclick="analyzeToken()"
-                        class="bg-gradient-to-r from-accent-green to-accent-blue px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition flex items-center gap-2 disabled:opacity-50">
-                        <span id="btnText">Analyze</span>
-                        <div id="btnSpinner" class="spinner hidden"></div>
-                    </button>
+            <!-- Search Box -->
+            <div class="max-w-2xl mx-auto mb-8">
+                <div class="bg-dark-800 rounded-2xl p-6 border border-dark-600">
+                    <label class="block text-sm text-gray-400 mb-2">Contract Address (Ethereum Mainnet)</label>
+                    <div class="flex gap-3">
+                        <input type="text" id="tokenInput" 
+                            placeholder="0xdAC17F958D2ee523a2206206994597C13D831ec7" 
+                            class="flex-1 bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent-green transition font-mono text-sm">
+                        <button id="analyzeBtn" onclick="analyzeToken()"
+                            class="bg-gradient-to-r from-accent-green to-accent-blue px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition flex items-center gap-2 disabled:opacity-50">
+                            <span id="btnText">Analyze</span>
+                            <div id="btnSpinner" class="spinner hidden"></div>
+                        </button>
+                    </div>
+                    <p class="text-xs text-yellow-500/80 mt-2">⚠️ Results cached for 5 min. For volatile tokens, re-check after a few minutes.</p>
                 </div>
-                <p class="text-xs text-gray-500 mt-2">Supports Ethereum Mainnet tokens</p>
+            </div>
+
+            <!-- Result Card -->
+            <div id="resultCard" class="max-w-2xl mx-auto mb-8 hidden">
+                <div id="resultContainer" class="rounded-2xl p-6 border transition-all duration-300"></div>
+            </div>
+
+            <!-- History -->
+            <div id="historySection" class="max-w-2xl mx-auto hidden">
+                <h3 class="text-lg font-semibold mb-4 text-gray-400">Recent Searches</h3>
+                <div id="historyList" class="space-y-2"></div>
             </div>
         </div>
 
-        <!-- Result Card -->
-        <div id="resultCard" class="max-w-2xl mx-auto mb-8 hidden">
-            <div id="resultContainer" class="rounded-2xl p-6 border transition-all duration-300">
-                <!-- Dynamic content -->
-            </div>
-        </div>
+        <!-- Documentation Tab -->
+        <div id="content-docs" class="hidden">
+            <!-- API Overview -->
+            <div class="mb-12">
+                <h2 class="text-2xl font-bold mb-4">API Documentation</h2>
+                <p class="text-gray-400 mb-6">
+                    REST API for token risk analysis. Base URL: 
+                    <code class="bg-dark-700 px-2 py-1 rounded text-accent-green">https://yelling-patience-nirvagold-0a943e82.koyeb.app</code>
+                </p>
 
-        <!-- History -->
-        <div id="historySection" class="max-w-2xl mx-auto hidden">
-            <h3 class="text-lg font-semibold mb-4 text-gray-400">Recent Searches</h3>
-            <div id="historyList" class="space-y-2"></div>
-        </div>
+                <!-- Risk Score Table -->
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 mb-8">
+                    <h3 class="text-lg font-semibold mb-4">Risk Score Levels</h3>
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-gray-400 border-b border-dark-600">
+                                <th class="pb-3">Score</th>
+                                <th class="pb-3">Level</th>
+                                <th class="pb-3">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-gray-300">
+                            <tr class="border-b border-dark-700"><td class="py-2">0-20</td><td class="text-green-400">✅ SAFE</td><td>Trade freely</td></tr>
+                            <tr class="border-b border-dark-700"><td class="py-2">21-40</td><td class="text-yellow-400">🟡 LOW</td><td>Proceed with caution</td></tr>
+                            <tr class="border-b border-dark-700"><td class="py-2">41-60</td><td class="text-orange-400">🟠 MEDIUM</td><td>Review before trading</td></tr>
+                            <tr class="border-b border-dark-700"><td class="py-2">61-80</td><td class="text-red-400">🔴 HIGH</td><td>Likely to lose funds</td></tr>
+                            <tr><td class="py-2">81-100</td><td class="text-red-600">💀 CRITICAL</td><td>Do not trade</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
-        <!-- Features -->
-        <div class="grid md:grid-cols-3 gap-6 mt-16">
-            <div class="bg-dark-800 rounded-xl p-6 border border-dark-600">
-                <div class="w-12 h-12 bg-accent-green/20 rounded-lg flex items-center justify-center mb-4">
-                    <span class="text-2xl">⚡</span>
+            <!-- Endpoints -->
+            <div class="space-y-8">
+                <!-- Health Check -->
+                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
+                        <span class="px-2 py-1 bg-green-900/50 text-green-400 rounded text-xs font-mono">GET</span>
+                        <code class="text-white">/v1/health</code>
+                        <span class="text-gray-500 text-sm ml-auto">Health check</span>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-gray-400 text-sm mb-3">Check if the API is running.</p>
+                        <pre><code class="text-gray-300">curl https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/health</code></pre>
+                    </div>
                 </div>
-                <h3 class="font-semibold mb-2">Lightning Fast</h3>
-                <p class="text-sm text-gray-400">REVM simulation completes in milliseconds, giving you instant results.</p>
+
+                <!-- Honeypot Check -->
+                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
+                        <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
+                        <code class="text-white">/v1/honeypot/check</code>
+                        <span class="text-gray-500 text-sm ml-auto">Honeypot detection</span>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-gray-400 text-sm mb-3">Simulate buy/sell to detect honeypot tokens.</p>
+                        <h4 class="text-sm font-semibold text-gray-300 mb-2">Request</h4>
+                        <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "test_amount_eth": "0.1"
+  }'</code></pre>
+                        <h4 class="text-sm font-semibold text-gray-300 mb-2 mt-4">Response</h4>
+                        <pre><code class="text-gray-300">{
+  "success": true,
+  "data": {
+    "token_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "is_honeypot": false,
+    "risk_score": 10,
+    "buy_success": true,
+    "sell_success": true,
+    "buy_tax_percent": 0.30,
+    "sell_tax_percent": 0.30,
+    "total_loss_percent": 0.60,
+    "reason": "Token passed buy/sell simulation"
+  },
+  "latency_ms": 1250.5
+}</code></pre>
+                    </div>
+                </div>
+
+                <!-- Token Analysis -->
+                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
+                        <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
+                        <code class="text-white">/v1/analyze/token</code>
+                        <span class="text-gray-500 text-sm ml-auto">Full risk analysis</span>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-gray-400 text-sm mb-3">Complete PERS (Pre-Execution Risk Scoring) analysis.</p>
+                        <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/analyze/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "test_amount_eth": "0.1",
+    "chain_id": 1
+  }'</code></pre>
+                    </div>
+                </div>
+
+                <!-- Batch Analysis -->
+                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
+                        <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
+                        <code class="text-white">/v1/analyze/batch</code>
+                        <span class="text-gray-500 text-sm ml-auto">Batch analysis (max 100)</span>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-gray-400 text-sm mb-3">Analyze multiple tokens in parallel.</p>
+                        <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/analyze/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tokens": [
+      "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    ],
+    "test_amount_eth": "0.1",
+    "concurrency": 10
+  }'</code></pre>
+                    </div>
+                </div>
+
+                <!-- Stats -->
+                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
+                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
+                        <span class="px-2 py-1 bg-green-900/50 text-green-400 rounded text-xs font-mono">GET</span>
+                        <code class="text-white">/v1/stats</code>
+                        <span class="text-gray-500 text-sm ml-auto">API statistics</span>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-gray-400 text-sm mb-3">Get protection statistics and uptime.</p>
+                        <pre><code class="text-gray-300">curl https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/stats</code></pre>
+                    </div>
+                </div>
             </div>
-            <div class="bg-dark-800 rounded-xl p-6 border border-dark-600">
-                <div class="w-12 h-12 bg-accent-blue/20 rounded-lg flex items-center justify-center mb-4">
-                    <span class="text-2xl">🔒</span>
+
+            <!-- Python Example -->
+            <div class="mt-12">
+                <h3 class="text-xl font-bold mb-4">Python Example</h3>
+                <div class="bg-dark-800 rounded-xl border border-dark-600 p-4">
+                    <pre><code class="text-gray-300">import requests
+
+def check_honeypot(token_address: str) -> dict:
+    response = requests.post(
+        "https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check",
+        json={"token_address": token_address, "test_amount_eth": "0.1"}
+    )
+    return response.json()
+
+# Example usage
+result = check_honeypot("0xdAC17F958D2ee523a2206206994597C13D831ec7")
+
+if result["success"]:
+    data = result["data"]
+    if data["is_honeypot"]:
+        print(f"🚨 HONEYPOT: {data['reason']}")
+    else:
+        print(f"✅ Safe - Risk: {data['risk_score']}/100, Tax: {data['total_loss_percent']:.2f}%")
+else:
+    print(f"❌ Error: {result['error']['message']}")</code></pre>
                 </div>
-                <h3 class="font-semibold mb-2">Pre-Trade Protection</h3>
-                <p class="text-sm text-gray-400">Detect honeypots, high taxes, and other risks before you buy.</p>
-            </div>
-            <div class="bg-dark-800 rounded-xl p-6 border border-dark-600">
-                <div class="w-12 h-12 bg-accent-yellow/20 rounded-lg flex items-center justify-center mb-4">
-                    <span class="text-2xl">🦀</span>
-                </div>
-                <h3 class="font-semibold mb-2">Rust Powered</h3>
-                <p class="text-sm text-gray-400">Built with Rust for maximum performance and reliability.</p>
             </div>
         </div>
     </main>
@@ -122,8 +280,8 @@
     <!-- Footer -->
     <footer class="border-t border-dark-600 mt-16 py-8">
         <div class="max-w-6xl mx-auto px-4 text-center text-gray-500 text-sm">
-            <p>Ruster Shield © 2026 | Open Source on <a href="https://github.com/nirvagold/Rust-REVM" class="text-accent-green hover:underline">GitHub</a></p>
-            <p class="mt-2">⚠️ This tool is for educational purposes. Always DYOR before trading.</p>
+            <p>Ruster Shield © 2026 | <a href="https://github.com/nirvagold/Rust-REVM" class="text-accent-green hover:underline">GitHub</a></p>
+            <p class="mt-2">⚠️ For educational purposes. Always DYOR before trading.</p>
         </div>
     </footer>
 
@@ -131,23 +289,27 @@
         const API_URL = 'https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check';
         let searchHistory = [];
 
+        function showTab(tab) {
+            document.getElementById('content-tester').classList.toggle('hidden', tab !== 'tester');
+            document.getElementById('content-docs').classList.toggle('hidden', tab !== 'docs');
+            document.getElementById('tab-tester').classList.toggle('tab-active', tab === 'tester');
+            document.getElementById('tab-docs').classList.toggle('tab-active', tab === 'docs');
+            document.getElementById('tab-tester').classList.toggle('text-gray-400', tab !== 'tester');
+            document.getElementById('tab-docs').classList.toggle('text-gray-400', tab !== 'docs');
+        }
+
         async function analyzeToken() {
             const input = document.getElementById('tokenInput');
             const btn = document.getElementById('analyzeBtn');
             const btnText = document.getElementById('btnText');
             const btnSpinner = document.getElementById('btnSpinner');
-            const resultCard = document.getElementById('resultCard');
-            const resultContainer = document.getElementById('resultContainer');
-
             const address = input.value.trim();
             
-            // Validate
             if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
                 showError('Invalid address format. Must be 0x followed by 40 hex characters.');
                 return;
             }
 
-            // Loading state
             btn.disabled = true;
             btnText.textContent = 'Analyzing...';
             btnSpinner.classList.remove('hidden');
@@ -158,9 +320,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token_address: address, test_amount_eth: "0.1" })
                 });
-
                 const result = await response.json();
-                console.log('API Response:', result); // Debug log
                 
                 if (result.success && result.data) {
                     displayResult(result.data, address);
@@ -169,7 +329,6 @@
                     showError(result.error?.message || 'Analysis failed');
                 }
             } catch (err) {
-                console.error('Fetch error:', err);
                 showError('Network error: ' + err.message);
             } finally {
                 btn.disabled = false;
@@ -182,9 +341,6 @@
             const resultCard = document.getElementById('resultCard');
             const resultContainer = document.getElementById('resultContainer');
             
-            console.log('Display data:', data); // Debug log
-            
-            // Extract fields from API response
             const isHoneypot = data.is_honeypot || false;
             const riskScore = data.risk_score || 0;
             const buyTax = data.buy_tax_percent || 0;
@@ -196,7 +352,6 @@
 
             let status, statusColor, bgClass, glowClass;
             
-            // Improved detection logic
             if (isHoneypot || !sellSuccess || riskScore >= 80) {
                 status = '🚨 HONEYPOT DETECTED';
                 statusColor = 'text-accent-red';
@@ -220,19 +375,17 @@
             }
 
             resultContainer.className = `rounded-2xl p-6 border transition-all duration-300 ${bgClass} ${glowClass}`;
-            
             resultContainer.innerHTML = `
                 <div class="text-center mb-6">
                     <h3 class="text-2xl font-bold ${statusColor}">${status}</h3>
                     <p class="text-gray-400 text-sm mt-1 font-mono">${address.slice(0,10)}...${address.slice(-8)}</p>
                 </div>
-                
-                <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="grid grid-cols-2 gap-4 mb-4">
                     <div class="bg-dark-800/50 rounded-xl p-4 text-center">
                         <p class="text-gray-400 text-sm">Risk Score</p>
                         <p class="text-3xl font-bold ${riskScore >= 50 ? 'text-accent-red' : 'text-accent-green'}">${riskScore}</p>
                         <div class="w-full bg-dark-600 rounded-full h-2 mt-2">
-                            <div class="h-2 rounded-full transition-all ${riskScore >= 50 ? 'bg-accent-red' : 'bg-accent-green'}" style="width: ${riskScore}%"></div>
+                            <div class="h-2 rounded-full ${riskScore >= 50 ? 'bg-accent-red' : 'bg-accent-green'}" style="width: ${riskScore}%"></div>
                         </div>
                     </div>
                     <div class="bg-dark-800/50 rounded-xl p-4 text-center">
@@ -240,58 +393,35 @@
                         <p class="text-3xl font-bold ${isHoneypot ? 'text-accent-red' : 'text-accent-green'}">${isHoneypot ? 'YES' : 'NO'}</p>
                     </div>
                 </div>
-
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="bg-dark-800/50 rounded-xl p-4">
-                        <p class="text-gray-400 text-sm">Buy Tax</p>
-                        <p class="text-xl font-semibold ${buyTax > 10 ? 'text-accent-yellow' : 'text-white'}">${buyTax.toFixed(2)}%</p>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-dark-800/50 rounded-xl p-3 text-center">
+                        <p class="text-gray-400 text-xs">Buy Tax</p>
+                        <p class="text-lg font-semibold ${buyTax > 10 ? 'text-accent-yellow' : 'text-white'}">${buyTax.toFixed(2)}%</p>
                     </div>
-                    <div class="bg-dark-800/50 rounded-xl p-4">
-                        <p class="text-gray-400 text-sm">Sell Tax</p>
-                        <p class="text-xl font-semibold ${sellTax > 10 ? 'text-accent-red' : 'text-white'}">${sellTax.toFixed(2)}%</p>
+                    <div class="bg-dark-800/50 rounded-xl p-3 text-center">
+                        <p class="text-gray-400 text-xs">Sell Tax</p>
+                        <p class="text-lg font-semibold ${sellTax > 10 ? 'text-accent-red' : 'text-white'}">${sellTax.toFixed(2)}%</p>
                     </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-dark-800/50 rounded-xl p-4">
-                        <p class="text-gray-400 text-sm">Buy</p>
-                        <p class="text-xl font-semibold ${buySuccess ? 'text-accent-green' : 'text-accent-red'}">${buySuccess ? '✓ Success' : '✗ Failed'}</p>
-                    </div>
-                    <div class="bg-dark-800/50 rounded-xl p-4">
-                        <p class="text-gray-400 text-sm">Sell</p>
-                        <p class="text-xl font-semibold ${sellSuccess ? 'text-accent-green' : 'text-accent-red'}">${sellSuccess ? '✓ Success' : '✗ Failed'}</p>
+                    <div class="bg-dark-800/50 rounded-xl p-3 text-center">
+                        <p class="text-gray-400 text-xs">Total Loss</p>
+                        <p class="text-lg font-semibold ${totalLoss > 10 ? 'text-accent-yellow' : 'text-white'}">${totalLoss.toFixed(2)}%</p>
                     </div>
                 </div>
-
-                ${totalLoss > 0 ? `
-                <div class="bg-dark-800/50 rounded-xl p-4 mt-4">
-                    <p class="text-gray-400 text-sm">Total Loss (Round Trip)</p>
-                    <p class="text-xl font-semibold ${totalLoss > 20 ? 'text-accent-red' : totalLoss > 10 ? 'text-accent-yellow' : 'text-white'}">${totalLoss.toFixed(2)}%</p>
-                </div>
-                ` : ''}
-
                 ${reason ? `<p class="text-gray-400 text-sm mt-4 text-center italic">"${reason}"</p>` : ''}
             `;
-
             resultCard.classList.remove('hidden');
         }
 
         function showError(message) {
             const resultCard = document.getElementById('resultCard');
             const resultContainer = document.getElementById('resultContainer');
-            
             resultContainer.className = 'rounded-2xl p-6 border bg-red-900/20 border-accent-red/50';
-            resultContainer.innerHTML = `
-                <div class="text-center">
-                    <h3 class="text-xl font-bold text-accent-red">❌ Error</h3>
-                    <p class="text-gray-400 mt-2">${message}</p>
-                </div>
-            `;
+            resultContainer.innerHTML = `<div class="text-center"><h3 class="text-xl font-bold text-accent-red">❌ Error</h3><p class="text-gray-400 mt-2">${message}</p></div>`;
             resultCard.classList.remove('hidden');
         }
 
         function addToHistory(address, data) {
-            searchHistory.unshift({ address, data, time: new Date() });
+            searchHistory.unshift({ address, data });
             if (searchHistory.length > 5) searchHistory.pop();
             renderHistory();
         }
@@ -299,35 +429,18 @@
         function renderHistory() {
             const section = document.getElementById('historySection');
             const list = document.getElementById('historyList');
-            
-            if (searchHistory.length === 0) {
-                section.classList.add('hidden');
-                return;
-            }
-
+            if (searchHistory.length === 0) { section.classList.add('hidden'); return; }
             section.classList.remove('hidden');
             list.innerHTML = searchHistory.map(item => {
                 const isHoneypot = item.data.is_honeypot || !item.data.sell_success;
                 const riskScore = item.data.risk_score || 0;
-                const statusIcon = isHoneypot ? '🚨' : riskScore >= 50 ? '⚠️' : '✅';
-                const statusClass = isHoneypot ? 'text-accent-red' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
-                return `
-                    <div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700 transition"
-                         onclick="document.getElementById('tokenInput').value='${item.address}'; analyzeToken();">
-                        <div class="flex items-center gap-3">
-                            <span class="${statusClass}">${statusIcon}</span>
-                            <span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span>
-                        </div>
-                        <span class="text-gray-500 text-xs">${riskScore}/100</span>
-                    </div>
-                `;
+                const icon = isHoneypot ? '🚨' : riskScore >= 50 ? '⚠️' : '✅';
+                const cls = isHoneypot ? 'text-accent-red' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
+                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span><span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span></div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
             }).join('');
         }
 
-        // Enter key support
-        document.getElementById('tokenInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') analyzeToken();
-        });
+        document.getElementById('tokenInput').addEventListener('keypress', e => { if (e.key === 'Enter') analyzeToken(); });
     </script>
 </body>
 </html>
