@@ -318,18 +318,28 @@ if result["success"]:
             const noLiquidity = reason.toLowerCase().includes('no liquidity') || 
                                reason.toLowerCase().includes('no pair') ||
                                (!buySuccess && !sellSuccess && !isHoneypot);
+            
+            // Check if it's V3-only (not supported)
+            const isV3Only = reason.toLowerCase().includes('v3') || 
+                            reason.toLowerCase().includes('velodrome') ||
+                            reason.toLowerCase().includes('not supported yet');
 
             // Get chain emoji
             const chainEmoji = {1:'🔷',56:'🟡',137:'🟣',42161:'🔵',10:'🔴',43114:'🔺',8453:'🔵'}[chainId] || '🔗';
 
             let status, statusColor, bgClass, glowClass;
             
-            // Priority: Honeypot > No Liquidity > Risk Score
+            // Priority: Honeypot > V3-Only > No Liquidity > Risk Score
             if (isHoneypot) {
                 status = '🚨 HONEYPOT DETECTED';
                 statusColor = 'text-accent-red';
                 bgClass = 'bg-red-900/20 border-accent-red/50';
                 glowClass = 'glow-danger';
+            } else if (isV3Only) {
+                status = '⚠️ V3 ONLY (Not Supported)';
+                statusColor = 'text-accent-blue';
+                bgClass = 'bg-blue-900/20 border-accent-blue/50';
+                glowClass = '';
             } else if (noLiquidity) {
                 status = '❓ NO LIQUIDITY';
                 statusColor = 'text-gray-400';

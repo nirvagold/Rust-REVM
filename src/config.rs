@@ -1,10 +1,16 @@
 //! Configuration module for Mempool Sentry
 //! Handles all configurable parameters and known DEX router addresses
+//!
+//! CEO Executive Order: Dynamic Alchemy URL Construction
+//! - Single ALCHEMY_API_KEY generates URLs for all 7 EVM chains + Solana
+//! - Multi-tier fallback to public RPCs
+//! - API key protection (never logged)
 
 use alloy_primitives::Address;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::time::Duration;
+use tracing::info;
 
 /// Supported blockchain networks
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -105,7 +111,8 @@ impl ChainConfig {
 }
 
 impl ChainConfig {
-    /// Get Alchemy RPC URL for a chain
+    /// Get Alchemy RPC URL for a chain (Dynamic URL Construction)
+    /// CEO Directive: Single ALCHEMY_API_KEY for all chains
     fn alchemy_url(chain_id: u64, api_key: &str) -> Option<String> {
         let network = match chain_id {
             1 => "eth-mainnet",
@@ -120,11 +127,19 @@ impl ChainConfig {
         Some(format!("https://{}.g.alchemy.com/v2/{}", network, api_key))
     }
 
+    /// Get Solana Alchemy URL
+    #[allow(dead_code)]
+    pub fn solana_alchemy_url(api_key: &str) -> String {
+        format!("https://solana-mainnet.g.alchemy.com/v2/{}", api_key)
+    }
+
     /// Extract API key from Alchemy URL or env var
+    /// CEO Security Directive: Key is NEVER logged
     fn get_alchemy_key() -> Option<String> {
         // First try dedicated ALCHEMY_API_KEY env var
         if let Ok(key) = std::env::var("ALCHEMY_API_KEY") {
             if !key.is_empty() && key != "YOUR_API_KEY" {
+                info!("🔑 ALCHEMY_API_KEY configured (key hidden for security)");
                 return Some(key);
             }
         }
@@ -136,6 +151,22 @@ impl ChainConfig {
                 url.split("/v2/").nth(1).map(|s| s.to_string())
             })
             .filter(|k| !k.is_empty() && k != "YOUR_API_KEY")
+    }
+
+    /// Get public RPC fallback URL for a chain
+    /// CEO Directive: Multi-tier fallback for resilience
+    #[allow(dead_code)]
+    pub fn public_fallback(chain_id: u64) -> Option<&'static str> {
+        match chain_id {
+            1 => Some("https://eth.llamarpc.com"),
+            56 => Some("https://bsc-dataseed.binance.org"),
+            137 => Some("https://polygon-rpc.com"),
+            42161 => Some("https://arb1.arbitrum.io/rpc"),
+            10 => Some("https://mainnet.optimism.io"),
+            43114 => Some("https://api.avax.network/ext/bc/C/rpc"),
+            8453 => Some("https://mainnet.base.org"),
+            _ => None,
+        }
     }
 
     /// Get all supported chain configs
