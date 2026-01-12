@@ -532,6 +532,13 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<ApiResponse<S
 /// Calculate risk score from HoneypotResult
 /// PERS v2 algorithm implementation
 fn calculate_risk_score(result: &crate::honeypot::HoneypotResult) -> u8 {
+    // Special case: No liquidity found - not necessarily dangerous
+    // Token might just trade on a different DEX
+    if !result.buy_success && !result.sell_success && !result.is_honeypot && !result.sell_reverted {
+        // No liquidity = unknown, give neutral score
+        return 30; // "LOW" risk - we just couldn't test it
+    }
+
     // Base score based on simulation results
     let base_score = if result.sell_reverted {
         100 // CONFIRMED HONEYPOT - sell reverted

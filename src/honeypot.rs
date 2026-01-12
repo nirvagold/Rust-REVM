@@ -286,7 +286,7 @@ impl HoneypotDetector {
         let start = Instant::now();
         let mut risk_factors: Vec<String> = Vec::new();
 
-        info!("🔗 Simulating swap via RPC eth_call...");
+        info!("🔗 Simulating swap via RPC eth_call on {}...", self.chain_name);
 
         // Fetch token bytecode for access control scan
         let token_bytecode = self.fetch_bytecode(token).await;
@@ -298,21 +298,27 @@ impl HoneypotDetector {
             0
         };
 
-        // Try to get price quote from Uniswap
+        // Try to get price quote from DEX router
         let quote_result = self.get_amounts_out(test_amount_eth, token).await;
         
         match quote_result {
             Ok(expected_tokens) => {
                 if expected_tokens.is_zero() {
-                    return Ok(HoneypotResult::honeypot(
-                        "No liquidity - cannot get price quote".to_string(),
-                        false,
-                        false,
-                        false,
+                    // No liquidity - but this doesn't mean honeypot!
+                    // Token might just not have a pair on this specific DEX
+                    return Ok(HoneypotResult {
+                        is_honeypot: false,
+                        reason: format!("No liquidity pool found on {} DEX. Token may trade on other DEXes.", self.chain_name),
+                        buy_success: false,
+                        sell_success: false,
+                        sell_reverted: false,
+                        buy_tax_percent: 0.0,
+                        sell_tax_percent: 0.0,
+                        total_loss_percent: 0.0,
                         access_control_penalty,
-                        risk_factors,
-                        start.elapsed().as_millis() as u64,
-                    ));
+                        risk_factors: vec!["No liquidity on checked DEX".to_string()],
+                        latency_ms: start.elapsed().as_millis() as u64,
+                    });
                 }
 
                 info!("📊 Expected tokens from swap: {}", expected_tokens);
@@ -364,10 +370,29 @@ impl HoneypotDetector {
                         ))
                     }
                     Err(e) => {
-                        // Sell quote failed - might be honeypot
+                        // Sell quote failed - check if it's liquidity issue or actual honeypot
                         warn!("⚠️ Sell quote failed: {}", e);
+                        
+                        // If error contains "INSUFFICIENT" or similar, it's likely liquidity issue
+                        let error_str = e.to_string().to_lowercase();
+                        if error_str.contains("insufficient") || error_str.contains("empty") {
+                            return Ok(HoneypotResult {
+                                is_honeypot: false,
+                                reason: format!("Insufficient liquidity for sell on {} DEX", self.chain_name),
+                                buy_success: true,
+                                sell_success: false,
+                                sell_reverted: false,
+                                buy_tax_percent: 0.0,
+                                sell_tax_percent: 0.0,
+                                total_loss_percent: 0.0,
+                                access_control_penalty,
+                                risk_factors: vec!["Low liquidity".to_string()],
+                                latency_ms: start.elapsed().as_millis() as u64,
+                            });
+                        }
+                        
                         Ok(HoneypotResult::honeypot(
-                            format!("Cannot sell: {}", e),
+                            format!("Sell returned 0 {} - cannot sell tokens", self.native_symbol),
                             true,
                             false,
                             true,
@@ -379,16 +404,23 @@ impl HoneypotDetector {
                 }
             }
             Err(e) => {
-                warn!("⚠️ Buy quote failed: {}", e);
-                Ok(HoneypotResult::honeypot(
-                    format!("Cannot buy: {} - No liquidity or invalid pair", e),
-                    false,
-                    false,
-                    false,
+                // Buy quote failed - likely no liquidity pool on this DEX
+                warn!("⚠️ Buy quote failed on {}: {}", self.chain_name, e);
+                
+                // Return as "unknown" not "honeypot" - token might trade on different DEX
+                Ok(HoneypotResult {
+                    is_honeypot: false,
+                    reason: format!("No trading pair found on {} DEX. Try checking on a different DEX.", self.chain_name),
+                    buy_success: false,
+                    sell_success: false,
+                    sell_reverted: false,
+                    buy_tax_percent: 0.0,
+                    sell_tax_percent: 0.0,
+                    total_loss_percent: 0.0,
                     access_control_penalty,
-                    risk_factors,
-                    start.elapsed().as_millis() as u64,
-                ))
+                    risk_factors: vec![format!("No pair on {} DEX", self.chain_name)],
+                    latency_ms: start.elapsed().as_millis() as u64,
+                })
             }
         }
     }
