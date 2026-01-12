@@ -81,37 +81,38 @@ def display_result(result: dict, token_address: str):
         print(f"{Fore.RED}❌ Error: {result['error']}{Style.RESET_ALL}")
         return
     
-    # API returns data inside "data" object
-    data = result.get("data", result)
+    # Check API success
+    if not result.get("success", False):
+        print(f"{Fore.RED}❌ API Error: Request failed{Style.RESET_ALL}")
+        return
     
-    # Extract data with correct field names from API
+    # Extract data from API response
+    data = result.get("data", {})
+    
     is_honeypot = data.get("is_honeypot", False)
     risk_score = data.get("risk_score", 0)
-    buy_tax = data.get("buy_tax_percent", 0)
-    sell_tax = data.get("sell_tax_percent", 0)
-    total_loss = data.get("total_loss_percent", 0)
-    buy_success = data.get("buy_success", True)
-    sell_success = data.get("sell_success", True)
-    reason = data.get("reason", "")
+    buy_tax = data.get("buy_tax", 0.0)
+    sell_tax = data.get("sell_tax", 0.0)
+    risk_factors = data.get("risk_factors", [])
     
-    # Decision logic - more accurate detection
-    if is_honeypot or not sell_success:
+    # Decision logic
+    if is_honeypot:
         print(f"{Fore.RED}{'='*60}")
         print(f"{Fore.RED}🚨🚨🚨 JANGAN BELI! HONEYPOT TERDETEKSI 🚨🚨🚨")
         print(f"{Fore.RED}{'='*60}{Style.RESET_ALL}")
         print(f"\n{Fore.RED}Token ini adalah SCAM! Anda TIDAK akan bisa menjual!")
         status = "HONEYPOT"
-    elif risk_score >= 70 or total_loss > 30:
+    elif risk_score >= 70 or sell_tax > 50:
         print(f"{Fore.RED}{'='*60}")
         print(f"{Fore.RED}🚨 RISIKO SANGAT TINGGI - JANGAN BELI! 🚨")
         print(f"{Fore.RED}{'='*60}{Style.RESET_ALL}")
         status = "CRITICAL"
-    elif risk_score >= 50 or total_loss > 15:
+    elif risk_score >= 50 or sell_tax > 20:
         print(f"{Fore.YELLOW}{'='*60}")
         print(f"{Fore.YELLOW}⚠️  RISIKO TINGGI - HATI-HATI! ⚠️")
         print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
         status = "HIGH RISK"
-    elif risk_score >= 30 or total_loss > 5:
+    elif risk_score >= 30 or sell_tax > 10:
         print(f"{Fore.YELLOW}{'='*60}")
         print(f"{Fore.YELLOW}⚠️  RISIKO SEDANG - PERHATIKAN TAX ⚠️")
         print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
@@ -124,33 +125,16 @@ def display_result(result: dict, token_address: str):
     
     # Display details
     print(f"\n{Fore.CYAN}📊 Detail Analisis:{Style.RESET_ALL}")
-    print(f"   • Status       : {get_status_color(status)}{status}{Style.RESET_ALL}")
-    print(f"   • Risk Score   : {get_score_color(risk_score)}{risk_score}/100{Style.RESET_ALL}")
-    print(f"   • Buy Success  : {Fore.GREEN if buy_success else Fore.RED}{'✓' if buy_success else '✗'}{Style.RESET_ALL}")
-    print(f"   • Sell Success : {Fore.GREEN if sell_success else Fore.RED}{'✓' if sell_success else '✗'}{Style.RESET_ALL}")
-    print(f"   • Buy Tax      : {get_tax_color(buy_tax)}{buy_tax:.2f}%{Style.RESET_ALL}")
-    print(f"   • Sell Tax     : {get_tax_color(sell_tax)}{sell_tax:.2f}%{Style.RESET_ALL}")
-    print(f"   • Total Loss   : {get_tax_color(total_loss)}{total_loss:.2f}%{Style.RESET_ALL}")
+    print(f"   • Status      : {get_status_color(status)}{status}{Style.RESET_ALL}")
+    print(f"   • Risk Score  : {get_score_color(risk_score)}{risk_score}/100{Style.RESET_ALL}")
+    print(f"   • Buy Tax     : {get_tax_color(buy_tax)}{buy_tax:.2f}%{Style.RESET_ALL}")
+    print(f"   • Sell Tax    : {get_tax_color(sell_tax)}{sell_tax:.2f}%{Style.RESET_ALL}")
     
-    if reason:
-        print(f"\n{Fore.CYAN}📝 Reason:{Style.RESET_ALL}")
-        print(f"   {reason}")
-    
-    # Warning messages based on findings
-    warnings = []
-    if not sell_success:
-        warnings.append("🚫 SELL GAGAL - Token tidak bisa dijual!")
-    if sell_tax > 50:
-        warnings.append(f"💸 Sell tax sangat tinggi ({sell_tax:.1f}%)")
-    if buy_tax > 20:
-        warnings.append(f"💸 Buy tax tinggi ({buy_tax:.1f}%)")
-    if total_loss > 20:
-        warnings.append(f"📉 Total loss tinggi ({total_loss:.1f}%)")
-    
-    if warnings:
-        print(f"\n{Fore.RED}⚠️  Peringatan:{Style.RESET_ALL}")
-        for w in warnings:
-            print(f"   {Fore.RED}• {w}{Style.RESET_ALL}")
+    # Show risk factors if any
+    if risk_factors:
+        print(f"\n{Fore.YELLOW}⚠️  Risk Factors:{Style.RESET_ALL}")
+        for factor in risk_factors:
+            print(f"   {Fore.YELLOW}• {factor}{Style.RESET_ALL}")
 
 def get_status_color(status: str) -> str:
     colors = {

@@ -8,7 +8,7 @@ use axum::{
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
-use tracing::{info, error, warn};
+use tracing::{info, error};
 
 use super::types::*;
 use crate::honeypot::HoneypotDetector;
