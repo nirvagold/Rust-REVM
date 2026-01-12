@@ -8,6 +8,7 @@ use axum::{
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
+use tracing::{info, error, warn};
 
 use super::types::*;
 use crate::honeypot::HoneypotDetector;
@@ -161,9 +162,26 @@ pub async fn check_honeypot(
     let test_amount: f64 = req.test_amount_eth.parse().unwrap_or(0.1);
     let test_wei = U256::from((test_amount * 1e18) as u128);
 
-    // Run detection
+    // Run detection with verbose logging
+    info!("🔍 Starting REVM simulation for token: {}", req.token_address);
+    info!("   Test amount: {} ETH ({} wei)", test_amount, test_wei);
+    
     let detector = HoneypotDetector::mainnet();
     let result = detector.detect(token, test_wei, None, None, None, None);
+
+    match &result {
+        Ok(data) => {
+            info!("✅ Simulation successful for {}", req.token_address);
+            info!("   is_honeypot: {}, buy_success: {}, sell_success: {}", 
+                  data.is_honeypot, data.buy_success, data.sell_success);
+            info!("   buy_tax: {:.2}%, sell_tax: {:.2}%, total_loss: {:.2}%",
+                  data.buy_tax_percent, data.sell_tax_percent, data.total_loss_percent);
+            info!("   reason: {}", data.reason);
+        }
+        Err(e) => {
+            error!("❌ SIMULATION FAILED for {}: {:?}", req.token_address, e);
+        }
+    }
 
     match result {
         Ok(hp_result) => {
