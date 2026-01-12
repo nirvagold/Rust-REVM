@@ -22,7 +22,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    
+
     // API v1 routes
     let api_v1 = Router::new()
         // Health & Status
@@ -33,7 +33,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/honeypot/check", post(handlers::check_honeypot))
         // Batch Analysis (NEW!)
         .route("/analyze/batch", post(handlers::batch_analyze));
-    
+
     // Build full router
     Router::new()
         .nest("/v1", api_v1)

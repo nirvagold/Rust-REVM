@@ -1,5 +1,5 @@
 //! Ruster REVM Library
-//! 
+//!
 //! High-performance REVM-based token risk analyzer implementing
 //! Pre-Execution Risk Scoring (PERS) for detecting:
 //! - Honeypot tokens via simulated Buy-Approve-Sell cycles
@@ -21,7 +21,7 @@ pub use analyzer::MempoolAnalyzer;
 pub use config::{DexRouters, SentryConfig};
 pub use decoder::SwapDecoder;
 pub use honeypot::{HoneypotDetector, HoneypotResult};
-pub use risk_score::{RiskScore, RiskScoreBuilder, RiskComponents};
+pub use risk_score::{RiskComponents, RiskScore, RiskScoreBuilder};
 pub use simulator::Simulator;
 pub use telemetry::{TelemetryCollector, TelemetryEvent, TelemetryStats, ThreatType};
 pub use types::{AnalysisResult, RiskFactor, RiskLevel, SwapParams};

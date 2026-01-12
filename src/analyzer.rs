@@ -5,13 +5,13 @@ use alloy_primitives::{Address, B256, U256};
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types::{Transaction, TransactionTrait};
 use dashmap::DashMap;
-use eyre::{Result, eyre};
+use eyre::{eyre, Result};
 use futures_util::StreamExt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 use crate::config::{DexRouters, SentryConfig};
 use crate::decoder::SwapDecoder;
@@ -83,7 +83,7 @@ impl MempoolAnalyzer {
             .map_err(|e| eyre!("Failed to connect to WebSocket: {}", e))?;
 
         let provider = Arc::new(provider);
-        
+
         info!("✅ Connected! Subscribing to pending transactions...");
 
         // Subscribe to pending transactions
@@ -108,8 +108,12 @@ impl MempoolAnalyzer {
                 let analyzed = stats.total_analyzed.load(Ordering::Relaxed);
                 let risky = stats.total_risky.load(Ordering::Relaxed);
                 let total_latency = stats.total_latency_ms.load(Ordering::Relaxed);
-                let avg_latency = if analyzed > 0 { total_latency / analyzed } else { 0 };
-                
+                let avg_latency = if analyzed > 0 {
+                    total_latency / analyzed
+                } else {
+                    0
+                };
+
                 info!(
                     "📊 Stats | Received: {} | Filtered: {} | Analyzed: {} | Risky: {} | Avg Latency: {}ms",
                     received, filtered, analyzed, risky, avg_latency
@@ -182,7 +186,7 @@ impl MempoolAnalyzer {
     pub fn get_stats(&self) -> SentryStats {
         let analyzed = self.stats.total_analyzed.load(Ordering::Relaxed);
         let total_latency = self.stats.total_latency_ms.load(Ordering::Relaxed);
-        
+
         SentryStats {
             total_received: self.stats.total_received.load(Ordering::Relaxed),
             total_filtered: self.stats.total_filtered.load(Ordering::Relaxed),
@@ -236,23 +240,18 @@ fn process_transaction(
     let swap_params = SwapDecoder::decode(&input, value);
 
     // Create analysis result
-    let mut result = AnalysisResult::new(
-        tx_hash,
-        tx.from,
-        target,
-        value,
-        U256::from(gas_price),
-    );
+    let mut result = AnalysisResult::new(tx_hash, tx.from, target, value, U256::from(gas_price));
 
     // Analyze swap parameters for risks
     if let Some(ref params) = swap_params {
         // Check slippage tolerance
         if !params.amount_in.is_zero() && !params.amount_out_min.is_zero() {
-            let ratio = params.amount_out_min
+            let ratio = params
+                .amount_out_min
                 .saturating_mul(U256::from(10000))
                 .checked_div(params.amount_in)
                 .unwrap_or(U256::from(10000));
-            
+
             let ratio_u64: u64 = ratio.try_into().unwrap_or(10000);
             if ratio_u64 < 10000 - config.slippage_threshold_bps {
                 let slippage_bps = 10000 - ratio_u64;
@@ -267,7 +266,8 @@ fn process_transaction(
         let value_eth = wei_to_eth(params.amount_in);
         if value_eth > 0.5 {
             let slippage_pct = if !params.amount_in.is_zero() {
-                let ratio = params.amount_out_min
+                let ratio = params
+                    .amount_out_min
                     .saturating_mul(U256::from(100))
                     .checked_div(params.amount_in)
                     .unwrap_or(U256::from(100));
@@ -289,12 +289,11 @@ fn process_transaction(
         // Check for fee-on-transfer tokens
         if input.len() >= 4 {
             let selector = &input[..4];
-            if selector == [0x79, 0x1a, 0xc9, 0x47] ||
-               selector == [0xb6, 0xf9, 0xde, 0x95] ||
-               selector == [0x5c, 0x11, 0xd7, 0x95] {
-                result.add_risk(RiskFactor::HighTax {
-                    tax_bps: 500,
-                });
+            if selector == [0x79, 0x1a, 0xc9, 0x47]
+                || selector == [0xb6, 0xf9, 0xde, 0x95]
+                || selector == [0x5c, 0x11, 0xd7, 0x95]
+            {
+                result.add_risk(RiskFactor::HighTax { tax_bps: 500 });
             }
         }
 
@@ -304,17 +303,17 @@ fn process_transaction(
         // ============================================
         if value_eth > 0.1 && params.path.len() >= 2 {
             let token_address = params.path.last().cloned();
-            
+
             if let Some(token) = token_address {
                 // Skip WETH (not a token swap)
                 let weth: Address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     .parse()
                     .unwrap_or_default();
-                
+
                 if token != weth {
                     let detector = HoneypotDetector::mainnet();
                     let test_amount = U256::from(100_000_000_000_000_000u128); // 0.1 ETH
-                    
+
                     match detector.detect(token, test_amount, None, None, None, None) {
                         Ok(hp_result) => {
                             if hp_result.is_honeypot {
@@ -360,7 +359,9 @@ fn process_transaction(
 
     // Set latency
     result.set_latency(start);
-    stats.total_latency_ms.fetch_add(result.latency_ms, Ordering::Relaxed);
+    stats
+        .total_latency_ms
+        .fetch_add(result.latency_ms, Ordering::Relaxed);
 
     // Update risky count
     if result.risk_level as u8 >= RiskLevel::Medium as u8 {
@@ -384,7 +385,7 @@ fn process_transaction(
                 RiskFactor::SimulationFailed { .. } => ThreatType::SimulationFailed,
                 RiskFactor::UnverifiedContract => continue, // Skip this one
             };
-            
+
             let event = TelemetryEvent::new(
                 threat_type,
                 value,
@@ -392,7 +393,7 @@ fn process_transaction(
                 result.risk_level as u8,
                 factor.description(),
             );
-            
+
             telemetry.record_threat(event);
         }
     } else {
