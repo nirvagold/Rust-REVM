@@ -76,6 +76,7 @@ pub struct HoneypotResult {
     /// Access control penalty (blacklist/setBots detected)
     pub access_control_penalty: u8,
     /// Risk factors detected
+    #[allow(dead_code)]
     pub risk_factors: Vec<String>,
     /// Detection latency in milliseconds
     #[allow(dead_code)]
@@ -548,6 +549,7 @@ impl HoneypotDetector {
     }
 
     /// Simulate selling tokens for ETH
+    #[allow(dead_code)]
     fn simulate_sell(
         &self,
         db: &mut CacheDB<EmptyDB>,

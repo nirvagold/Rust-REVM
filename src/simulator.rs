@@ -55,6 +55,7 @@ impl Simulator {
     }
 
     /// Simulate a transaction and return the result
+    #[allow(clippy::too_many_arguments)]
     pub fn simulate(
         &self, 
         from: Address,

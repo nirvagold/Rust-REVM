@@ -21,7 +21,7 @@ use tracing_subscriber::FmtSubscriber;
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     // Initialize logging
-    let _subscriber = FmtSubscriber::builder()
+    FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .with_target(false)
         .compact()

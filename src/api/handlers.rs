@@ -256,7 +256,7 @@ pub async fn batch_analyze(
         ));
     }
     
-    let concurrency = req.concurrency.min(50).max(1);
+    let concurrency = req.concurrency.clamp(1, 50);
     let test_amount: f64 = req.test_amount_eth.parse().unwrap_or(0.1);
     let test_wei = U256::from((test_amount * 1e18) as u128);
     
