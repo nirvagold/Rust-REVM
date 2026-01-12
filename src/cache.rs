@@ -59,11 +59,7 @@ impl CacheEntry {
     #[allow(dead_code)]
     pub fn remaining_ttl(&self) -> u64 {
         let elapsed = self.created_at.elapsed().as_secs();
-        if elapsed >= self.ttl_secs {
-            0
-        } else {
-            self.ttl_secs - elapsed
-        }
+        self.ttl_secs.saturating_sub(elapsed)
     }
 }
 
