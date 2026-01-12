@@ -1,7 +1,7 @@
 [package]
 name = "ruster_revm"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "High-performance REVM-based token risk analyzer with Pre-Execution Risk Scoring (PERS)"
 
 [[bin]]
