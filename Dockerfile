@@ -4,7 +4,8 @@
 # Optimized for minimal image size (~25MB)
 # 
 # Build: docker build -t ruster-revm .
-# Run:   docker run -p 3000:3000 -e ETH_WSS_URL=wss://... ruster-revm
+# Run:   docker run -p 8080:8080 ruster-revm
+# Railway: Automatically uses PORT env var
 
 # ============================================
 # Stage 1: Build
@@ -65,15 +66,10 @@ USER ruster
 
 # Environment defaults
 ENV RUSTER_HOST=0.0.0.0
-ENV RUSTER_PORT=3000
 ENV RUST_LOG=info
 
-# Expose port
-EXPOSE 3000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/v1/health || exit 1
+# Expose port (Railway will override with PORT env var)
+EXPOSE 8080
 
 # Run the API server
 CMD ["ruster_api"]
