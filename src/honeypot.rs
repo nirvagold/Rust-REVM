@@ -210,6 +210,7 @@ impl HoneypotDetector {
     }
 
     /// Fetch bytecode from RPC
+    #[allow(dead_code)]
     async fn fetch_bytecode(&self, address: Address) -> Option<Bytes> {
         let client = reqwest::Client::new();
         let payload = serde_json::json!({
@@ -247,6 +248,7 @@ impl HoneypotDetector {
 
     /// Detect honeypot with RPC bytecode fetching (async version)
     /// Uses eth_call to simulate swap on actual blockchain state
+    #[allow(dead_code)]
     pub async fn detect_async(
         &self,
         token: Address,
@@ -363,6 +365,7 @@ impl HoneypotDetector {
     }
 
     /// Get expected output tokens for ETH input via Uniswap getAmountsOut
+    #[allow(dead_code)]
     async fn get_amounts_out(&self, amount_in: U256, token: Address) -> Result<U256> {
         let path = vec![self.weth, token];
         let calldata = getAmountsOutCall {
@@ -374,6 +377,7 @@ impl HoneypotDetector {
     }
 
     /// Get expected ETH output for token input (reverse swap)
+    #[allow(dead_code)]
     async fn get_amounts_out_reverse(&self, amount_in: U256, token: Address) -> Result<U256> {
         let path = vec![token, self.weth];
         let calldata = getAmountsOutCall {
@@ -385,6 +389,7 @@ impl HoneypotDetector {
     }
 
     /// Execute eth_call on RPC
+    #[allow(dead_code)]
     async fn eth_call(&self, to: Address, data: Bytes) -> Result<U256> {
         let client = reqwest::Client::new();
         let payload = serde_json::json!({
