@@ -471,37 +471,11 @@ impl HoneypotDetector {
     }
 
     /// Execute eth_call on RPC (returns U256)
+    /// CEO Directive: Retry logic with exponential backoff, User-Agent header
     #[allow(dead_code)]
     async fn eth_call(&self, to: Address, data: Bytes) -> Result<U256> {
-        let client = reqwest::Client::new();
-        let payload = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "eth_call",
-            "params": [{
-                "to": format!("{:?}", to),
-                "data": format!("0x{}", hex::encode(&data))
-            }, "latest"],
-            "id": 1
-        });
-
-        let response = client.post(&self.rpc_url)
-            .json(&payload)
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .await
-            .map_err(|e| eyre!("RPC request failed: {}", e))?;
-
-        let json: serde_json::Value = response.json().await
-            .map_err(|e| eyre!("Failed to parse response: {}", e))?;
-
-        if let Some(error) = json.get("error") {
-            return Err(eyre!("RPC error: {}", error));
-        }
-
-        let result = json.get("result")
-            .and_then(|r| r.as_str())
-            .ok_or_else(|| eyre!("No result in response"))?;
-
+        let result = self.eth_call_with_retry(to, data, 3).await?;
+        
         if result == "0x" || result.len() < 66 {
             return Err(eyre!("Empty or invalid response"));
         }
@@ -520,10 +494,22 @@ impl HoneypotDetector {
         }
     }
 
-    /// Execute eth_call on RPC (returns raw bytes)
+    /// Execute eth_call with retry logic and exponential backoff
+    /// CEO Directive: Max 3 retries, backoff 100ms -> 200ms -> 400ms
     #[allow(dead_code)]
-    async fn eth_call_raw(&self, to: Address, data: Bytes) -> Result<Vec<u8>> {
-        let client = reqwest::Client::new();
+    async fn eth_call_with_retry(&self, to: Address, data: Bytes, max_retries: u32) -> Result<String> {
+        use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+        
+        let mut headers = HeaderMap::new();
+        headers.insert(USER_AGENT, HeaderValue::from_static("RusterShield/1.0.0"));
+        headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+        
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| eyre!("Failed to build client: {}", e))?;
+
         let payload = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "eth_call",
@@ -534,23 +520,61 @@ impl HoneypotDetector {
             "id": 1
         });
 
-        let response = client.post(&self.rpc_url)
-            .json(&payload)
-            .timeout(std::time::Duration::from_secs(5))
-            .send()
-            .await
-            .map_err(|e| eyre!("RPC request failed: {}", e))?;
+        let mut last_error = None;
+        
+        for attempt in 0..max_retries {
+            if attempt > 0 {
+                // Exponential backoff: 100ms, 200ms, 400ms
+                let delay = 100 * (2_u64.pow(attempt - 1));
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            }
 
-        let json: serde_json::Value = response.json().await
-            .map_err(|e| eyre!("Failed to parse response: {}", e))?;
+            match client.post(&self.rpc_url)
+                .json(&payload)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    // Check for rate limit
+                    if response.status() == 429 {
+                        warn!("⏳ Rate limited (429), backing off (attempt {}/{})", attempt + 1, max_retries);
+                        last_error = Some(eyre!("Rate limited (HTTP 429)"));
+                        continue;
+                    }
 
-        if let Some(error) = json.get("error") {
-            return Err(eyre!("RPC error: {}", error));
+                    match response.json::<serde_json::Value>().await {
+                        Ok(json) => {
+                            if let Some(error) = json.get("error") {
+                                last_error = Some(eyre!("RPC error: {}", error));
+                                continue;
+                            }
+
+                            if let Some(result) = json.get("result").and_then(|r| r.as_str()) {
+                                return Ok(result.to_string());
+                            }
+                            
+                            last_error = Some(eyre!("No result in response"));
+                        }
+                        Err(e) => {
+                            last_error = Some(eyre!("Failed to parse response: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("⚠️ RPC request failed (attempt {}/{}): {}", attempt + 1, max_retries, e);
+                    last_error = Some(eyre!("RPC request failed: {}", e));
+                }
+            }
         }
 
-        let result = json.get("result")
-            .and_then(|r| r.as_str())
-            .ok_or_else(|| eyre!("No result in response"))?;
+        Err(last_error.unwrap_or_else(|| eyre!("Unknown error after {} retries", max_retries)))
+    }
+
+    /// Execute eth_call on RPC (returns raw bytes)
+    /// CEO Directive: Uses retry logic with User-Agent header
+    #[allow(dead_code)]
+    async fn eth_call_raw(&self, to: Address, data: Bytes) -> Result<Vec<u8>> {
+        let result = self.eth_call_with_retry(to, data, 3).await?;
 
         if result == "0x" || result.len() < 4 {
             return Err(eyre!("Empty response"));
