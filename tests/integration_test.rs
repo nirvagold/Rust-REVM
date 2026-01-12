@@ -1,7 +1,7 @@
-//! Integration tests for Mempool Sentry
+//! Integration tests for Ruster REVM
 
 use alloy_primitives::{Address, Bytes, U256, B256};
-use mempool_sentry::{
+use ruster_revm::{
     config::DexRouters,
     decoder::SwapDecoder,
     types::{AnalysisResult, RiskFactor, RiskLevel},

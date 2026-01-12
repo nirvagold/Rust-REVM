@@ -1,7 +1,7 @@
 [package]
 name = "ruster_revm"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "High-performance REVM-based token risk analyzer with Pre-Execution Risk Scoring (PERS)"
 
 [[bin]]
@@ -44,6 +44,7 @@ hex = "0.4"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 lazy_static = "1.4"
+rand = "0.8"  # For random address generation in PERS algorithm
 
 [profile.release]
 opt-level = 'z'      # Optimasi ukuran, bukan kecepatan maksimal (lebih ringan)

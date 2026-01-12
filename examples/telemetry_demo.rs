@@ -5,7 +5,7 @@
 //! Run with: cargo run --example telemetry_demo
 
 use alloy_primitives::U256;
-use mempool_sentry::telemetry::{
+use ruster_revm::telemetry::{
     TelemetryCollector, TelemetryEvent, ThreatType, WeeklyReportGenerator,
 };
 use std::sync::Arc;

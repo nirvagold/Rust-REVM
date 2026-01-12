@@ -5,7 +5,7 @@
 //! Run with: cargo run --example honeypot_demo
 
 use alloy_primitives::{Address, U256};
-use mempool_sentry::honeypot::{HoneypotDetector, HoneypotResult};
+use ruster_revm::honeypot::{HoneypotDetector, HoneypotResult};
 use std::time::Instant;
 
 fn main() {
@@ -142,6 +142,9 @@ fn main() {
         "Sell failed: Reverted - transfer blocked".to_string(),
         true,
         false,
+        true,
+        50,
+        vec!["setBots detected".to_string()],
         23,
     );
     
@@ -150,7 +153,7 @@ fn main() {
     println!("   {}", honeypot_example.summary());
     println!();
     
-    let safe_example = HoneypotResult::safe(2.5, 3.0, 18);
+    let safe_example = HoneypotResult::safe(2.5, 3.0, 0, vec![], 18);
     println!("   Example Safe Token:");
     println!("   {}", safe_example.summary());
     println!();

@@ -160,8 +160,16 @@ pub async fn check_honeypot(
     
     match result {
         Ok(hp_result) => {
-            // Calculate risk score
-            let risk_score = if hp_result.is_honeypot {
+            // Calculate risk score with PERS v2 algorithm:
+            // - Sell reverted = 100 (confirmed honeypot)
+            // - Is honeypot = 95
+            // - High loss = 70
+            // - Medium loss = 40
+            // - Low loss = 10
+            // + Access control penalty (0 or 50)
+            let base_score = if hp_result.sell_reverted {
+                100 // CONFIRMED HONEYPOT - sell reverted
+            } else if hp_result.is_honeypot {
                 95
             } else if hp_result.total_loss_percent > 30.0 {
                 70
@@ -171,9 +179,12 @@ pub async fn check_honeypot(
                 10
             };
             
+            // Add access control penalty (capped at 100)
+            let risk_score = (base_score + hp_result.access_control_penalty as u32).min(100) as u8;
+            
             // Record telemetry for honeypot checks
             let latency = start.elapsed().as_millis() as u64;
-            if hp_result.is_honeypot {
+            if hp_result.is_honeypot || hp_result.sell_reverted {
                 use crate::telemetry::{TelemetryEvent, ThreatType};
                 let event = TelemetryEvent::new(
                     ThreatType::Honeypot,
@@ -189,7 +200,7 @@ pub async fn check_honeypot(
             
             let data = HoneypotCheckData {
                 token_address: req.token_address,
-                is_honeypot: hp_result.is_honeypot,
+                is_honeypot: hp_result.is_honeypot || hp_result.sell_reverted,
                 risk_score,
                 buy_success: hp_result.buy_success,
                 sell_success: hp_result.sell_success,
@@ -270,7 +281,10 @@ pub async fn batch_analyze(
                     let detector = HoneypotDetector::mainnet();
                     match detector.detect(token, wei, None, None, None, None) {
                         Ok(result) => {
-                            let risk_score = if result.is_honeypot {
+                            // PERS v2: sell_reverted = 100, + access_control_penalty
+                            let base_score = if result.sell_reverted {
+                                100
+                            } else if result.is_honeypot {
                                 95
                             } else if result.total_loss_percent > 30.0 {
                                 70
@@ -279,6 +293,7 @@ pub async fn batch_analyze(
                             } else {
                                 10
                             };
+                            let risk_score = (base_score + result.access_control_penalty as u32).min(100) as u8;
                             
                             let level = match risk_score {
                                 0..=20 => "SAFE",
