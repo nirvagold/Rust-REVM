@@ -77,40 +77,35 @@
                     Detect Honeypot Tokens Instantly
                 </h2>
                 <p class="text-gray-400 max-w-xl mx-auto">
-                    Simulate buy/sell transactions on real blockchain state before trading.
+                    Paste any token address. We auto-detect the chain and simulate buy/sell on real blockchain state.
                 </p>
+                <!-- Supported Chains -->
+                <div class="flex justify-center gap-2 mt-4 flex-wrap">
+                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔷 Ethereum</span>
+                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🟡 BSC</span>
+                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🟣 Polygon</span>
+                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔵 Arbitrum</span>
+                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔴 Optimism</span>
+                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔺 Avalanche</span>
+                    <span class="px-2 py-1 bg-dark-700 rounded text-xs text-gray-400">🔵 Base</span>
+                </div>
             </div>
 
-            <!-- Search Box -->
+            <!-- Search Box - SIMPLIFIED: No chain selector -->
             <div class="max-w-2xl mx-auto mb-8">
                 <div class="bg-dark-800 rounded-2xl p-6 border border-dark-600">
-                    <div class="flex gap-4 mb-4">
-                        <div class="flex-1">
-                            <label class="block text-sm text-gray-400 mb-2">Contract Address</label>
-                            <input type="text" id="tokenInput" 
-                                placeholder="0xdAC17F958D2ee523a2206206994597C13D831ec7" 
-                                class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent-green transition font-mono text-sm">
-                        </div>
-                        <div class="w-48">
-                            <label class="block text-sm text-gray-400 mb-2">Network</label>
-                            <select id="chainSelect" class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-accent-green transition">
-                                <option value="0">🔮 Auto-Detect</option>
-                                <option value="1">🔷 Ethereum</option>
-                                <option value="56">🟡 BNB Chain</option>
-                                <option value="137">🟣 Polygon</option>
-                                <option value="42161">🔵 Arbitrum</option>
-                                <option value="10">🔴 Optimism</option>
-                                <option value="43114">🔺 Avalanche</option>
-                                <option value="8453">🔵 Base</option>
-                            </select>
-                        </div>
-                    </div>
+                    <label class="block text-sm text-gray-400 mb-2">Token Contract Address</label>
+                    <input type="text" id="tokenInput" 
+                        placeholder="0x... (any EVM chain)" 
+                        class="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-accent-green transition font-mono text-sm mb-4">
                     <button id="analyzeBtn" onclick="analyzeToken()"
                         class="w-full bg-gradient-to-r from-accent-green to-accent-blue px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50">
                         <span id="btnText">🔍 Analyze Token</span>
                         <div id="btnSpinner" class="spinner hidden"></div>
                     </button>
-                    <p class="text-xs text-yellow-500/80 mt-3 text-center">⚠️ Results cached for 5 min. For volatile tokens, re-check after a few minutes.</p>
+                    <p class="text-xs text-gray-500 mt-3 text-center">
+                        🔮 Chain auto-detected via DexScreener · ⚡ Results cached 5 min
+                    </p>
                 </div>
             </div>
 
@@ -128,7 +123,6 @@
 
         <!-- Documentation Tab -->
         <div id="content-docs" class="hidden">
-            <!-- API Overview -->
             <div class="mb-12">
                 <h2 class="text-2xl font-bold mb-4">API Documentation</h2>
                 <p class="text-gray-400 mb-6">
@@ -165,10 +159,8 @@
                     <div class="flex items-center gap-3 p-4 border-b border-dark-600">
                         <span class="px-2 py-1 bg-green-900/50 text-green-400 rounded text-xs font-mono">GET</span>
                         <code class="text-white">/v1/health</code>
-                        <span class="text-gray-500 text-sm ml-auto">Health check</span>
                     </div>
                     <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Check if the API is running.</p>
                         <pre><code class="text-gray-300">curl https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/health</code></pre>
                     </div>
                 </div>
@@ -178,66 +170,14 @@
                     <div class="flex items-center gap-3 p-4 border-b border-dark-600">
                         <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
                         <code class="text-white">/v1/honeypot/check</code>
-                        <span class="text-gray-500 text-sm ml-auto">Honeypot detection</span>
+                        <span class="text-xs text-accent-green ml-2">🔮 Auto-detect chain</span>
                     </div>
                     <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Simulate buy/sell to detect honeypot tokens. Supports auto chain detection!</p>
-                        <h4 class="text-sm font-semibold text-gray-300 mb-2">Request Parameters</h4>
-                        <table class="w-full text-sm mb-4">
-                            <thead><tr class="text-left text-gray-400 border-b border-dark-600"><th class="pb-2">Field</th><th class="pb-2">Type</th><th class="pb-2">Description</th></tr></thead>
-                            <tbody class="text-gray-300">
-                                <tr class="border-b border-dark-700"><td class="py-2"><code>token_address</code></td><td>string</td><td>Token contract address (required)</td></tr>
-                                <tr class="border-b border-dark-700"><td class="py-2"><code>test_amount_eth</code></td><td>string</td><td>Test amount in native token (default: "0.1")</td></tr>
-                                <tr><td class="py-2"><code>chain_id</code></td><td>number</td><td>Chain ID. <span class="text-accent-green">0 = Auto-detect via DexScreener</span> (default: 0)</td></tr>
-                            </tbody>
-                        </table>
-                        <h4 class="text-sm font-semibold text-gray-300 mb-2">Example (Auto-Detect Chain)</h4>
+                        <p class="text-gray-400 text-sm mb-3">Just send the token address - chain is auto-detected!</p>
                         <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check \
   -H "Content-Type: application/json" \
-  -d '{
-    "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-  }'</code></pre>
-                        <p class="text-xs text-gray-500 mt-2">☝️ USDC on Base - chain will be auto-detected!</p>
-                        <h4 class="text-sm font-semibold text-gray-300 mb-2 mt-4">Response</h4>
-                        <pre><code class="text-gray-300">{
-  "success": true,
-  "data": {
-    "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "token_name": "USD Coin",
-    "token_symbol": "USDC",
-    "chain_id": 8453,
-    "chain_name": "Base",
-    "native_symbol": "ETH",
-    "is_honeypot": false,
-    "risk_score": 10,
-    "buy_success": true,
-    "sell_success": true,
-    "buy_tax_percent": 0.15,
-    "sell_tax_percent": 0.15,
-    "total_loss_percent": 0.30,
-    "reason": "Token passed buy/sell simulation"
-  },
-  "latency_ms": 1850.5
-}</code></pre>
-                    </div>
-                </div>
-
-                <!-- Token Analysis -->
-                <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
-                    <div class="flex items-center gap-3 p-4 border-b border-dark-600">
-                        <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
-                        <code class="text-white">/v1/analyze/token</code>
-                        <span class="text-gray-500 text-sm ml-auto">Full risk analysis</span>
-                    </div>
-                    <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Complete PERS (Pre-Execution Risk Scoring) analysis.</p>
-                        <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/analyze/token \
-  -H "Content-Type: application/json" \
-  -d '{
-    "token_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-    "test_amount_eth": "0.1",
-    "chain_id": 1
-  }'</code></pre>
+  -d '{"token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"}'</code></pre>
+                        <p class="text-xs text-gray-500 mt-2">☝️ USDC on Base - chain auto-detected!</p>
                     </div>
                 </div>
 
@@ -246,20 +186,12 @@
                     <div class="flex items-center gap-3 p-4 border-b border-dark-600">
                         <span class="px-2 py-1 bg-blue-900/50 text-blue-400 rounded text-xs font-mono">POST</span>
                         <code class="text-white">/v1/analyze/batch</code>
-                        <span class="text-gray-500 text-sm ml-auto">Batch analysis (max 100)</span>
                     </div>
                     <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Analyze multiple tokens in parallel.</p>
+                        <p class="text-gray-400 text-sm mb-3">Analyze up to 100 tokens in parallel.</p>
                         <pre><code class="text-gray-300">curl -X POST https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/analyze/batch \
   -H "Content-Type: application/json" \
-  -d '{
-    "tokens": [
-      "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-    ],
-    "test_amount_eth": "0.1",
-    "concurrency": 10
-  }'</code></pre>
+  -d '{"tokens": ["0xdAC17F958D2ee523a2206206994597C13D831ec7", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"]}'</code></pre>
                     </div>
                 </div>
 
@@ -268,10 +200,8 @@
                     <div class="flex items-center gap-3 p-4 border-b border-dark-600">
                         <span class="px-2 py-1 bg-green-900/50 text-green-400 rounded text-xs font-mono">GET</span>
                         <code class="text-white">/v1/stats</code>
-                        <span class="text-gray-500 text-sm ml-auto">API statistics</span>
                     </div>
                     <div class="p-4">
-                        <p class="text-gray-400 text-sm mb-3">Get protection statistics and uptime.</p>
                         <pre><code class="text-gray-300">curl https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/stats</code></pre>
                     </div>
                 </div>
@@ -284,23 +214,22 @@
                     <pre><code class="text-gray-300">import requests
 
 def check_honeypot(token_address: str) -> dict:
+    """Check any token - chain is auto-detected!"""
     response = requests.post(
         "https://yelling-patience-nirvagold-0a943e82.koyeb.app/v1/honeypot/check",
-        json={"token_address": token_address, "test_amount_eth": "0.1"}
+        json={"token_address": token_address}
     )
     return response.json()
 
-# Example usage
-result = check_honeypot("0xdAC17F958D2ee523a2206206994597C13D831ec7")
+# Works for ANY chain - no need to specify!
+result = check_honeypot("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # USDC on Base
 
 if result["success"]:
     data = result["data"]
-    if data["is_honeypot"]:
-        print(f"🚨 HONEYPOT: {data['reason']}")
-    else:
-        print(f"✅ Safe - Risk: {data['risk_score']}/100, Tax: {data['total_loss_percent']:.2f}%")
-else:
-    print(f"❌ Error: {result['error']['message']}")</code></pre>
+    print(f"Chain: {data['chain_name']}")  # Auto-detected: "Base"
+    print(f"Token: {data['token_symbol']}")
+    print(f"Honeypot: {data['is_honeypot']}")
+    print(f"Risk: {data['risk_score']}/100")</code></pre>
                 </div>
             </div>
         </div>
@@ -329,12 +258,10 @@ else:
 
         async function analyzeToken() {
             const input = document.getElementById('tokenInput');
-            const chainSelect = document.getElementById('chainSelect');
             const btn = document.getElementById('analyzeBtn');
             const btnText = document.getElementById('btnText');
             const btnSpinner = document.getElementById('btnSpinner');
             const address = input.value.trim();
-            const chainId = parseInt(chainSelect.value);
             
             if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
                 showError('Invalid address format. Must be 0x followed by 40 hex characters.');
@@ -342,18 +269,14 @@ else:
             }
 
             btn.disabled = true;
-            btnText.textContent = 'Analyzing...';
+            btnText.textContent = '🔮 Detecting chain...';
             btnSpinner.classList.remove('hidden');
 
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        token_address: address, 
-                        test_amount_eth: "0.1",
-                        chain_id: chainId
-                    })
+                    body: JSON.stringify({ token_address: address })
                 });
                 const result = await response.json();
                 
@@ -381,14 +304,17 @@ else:
             const buyTax = data.buy_tax_percent || 0;
             const sellTax = data.sell_tax_percent || 0;
             const totalLoss = data.total_loss_percent || 0;
-            const buySuccess = data.buy_success !== false;
             const sellSuccess = data.sell_success !== false;
             const reason = data.reason || '';
             const tokenName = data.token_name || null;
             const tokenSymbol = data.token_symbol || null;
             const tokenDecimals = data.token_decimals || null;
-            const chainName = data.chain_name || 'Ethereum';
+            const chainName = data.chain_name || 'Unknown';
             const nativeSymbol = data.native_symbol || 'ETH';
+            const chainId = data.chain_id || 1;
+
+            // Get chain emoji
+            const chainEmoji = {1:'🔷',56:'🟡',137:'🟣',42161:'🔵',10:'🔴',43114:'🔺',8453:'🔵'}[chainId] || '🔗';
 
             let status, statusColor, bgClass, glowClass;
             
@@ -414,13 +340,12 @@ else:
                 glowClass = 'glow-safe';
             }
 
-            // Token name/symbol display
             const tokenDisplay = tokenName && tokenSymbol 
                 ? `<p class="text-xl font-semibold text-white">${tokenName} <span class="text-accent-blue">(${tokenSymbol})</span></p>` 
                 : tokenSymbol 
                     ? `<p class="text-xl font-semibold text-accent-blue">${tokenSymbol}</p>`
                     : '';
-            const chainBadge = `<span class="inline-block px-2 py-1 bg-dark-700 rounded-full text-xs text-gray-300 mt-2">🔗 ${chainName} (${nativeSymbol})</span>`;
+            const chainBadge = `<span class="inline-block px-3 py-1 bg-dark-700 rounded-full text-sm text-gray-300 mt-2">${chainEmoji} ${chainName} (${nativeSymbol})</span>`;
             const decimalsDisplay = tokenDecimals !== null ? ` · ${tokenDecimals} decimals` : '';
 
             resultContainer.className = `rounded-2xl p-6 border transition-all duration-300 ${bgClass} ${glowClass}`;
@@ -482,16 +407,19 @@ else:
             const list = document.getElementById('historyList');
             if (searchHistory.length === 0) { section.classList.add('hidden'); return; }
             section.classList.remove('hidden');
+            const chainEmojis = {1:'🔷',56:'🟡',137:'🟣',42161:'🔵',10:'🔴',43114:'🔺',8453:'🔵'};
             list.innerHTML = searchHistory.map(item => {
                 const isHoneypot = item.data.is_honeypot || !item.data.sell_success;
                 const riskScore = item.data.risk_score || 0;
                 const symbol = item.data.token_symbol || null;
-                const chainName = item.data.chain_name || 'ETH';
+                const chainName = item.data.chain_name || 'Unknown';
+                const chainId = item.data.chain_id || 1;
+                const chainEmoji = chainEmojis[chainId] || '🔗';
                 const icon = isHoneypot ? '🚨' : riskScore >= 50 ? '⚠️' : '✅';
                 const cls = isHoneypot ? 'text-accent-red' : riskScore >= 50 ? 'text-accent-yellow' : 'text-accent-green';
                 const displayName = symbol ? `<span class="text-accent-blue font-semibold">${symbol}</span>` : `<span class="font-mono text-sm">${item.address.slice(0,10)}...${item.address.slice(-6)}</span>`;
-                const chainBadge = `<span class="text-xs text-gray-500 ml-2">${chainName}</span>`;
-                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';document.getElementById('chainSelect').value='${item.data.chain_id || 1}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span>${displayName}${chainBadge}</div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
+                const chainBadge = `<span class="text-xs text-gray-500 ml-2">${chainEmoji} ${chainName}</span>`;
+                return `<div class="bg-dark-800 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-dark-700" onclick="document.getElementById('tokenInput').value='${item.address}';analyzeToken();"><div class="flex items-center gap-3"><span class="${cls}">${icon}</span>${displayName}${chainBadge}</div><span class="text-gray-500 text-xs">${riskScore}/100</span></div>`;
             }).join('');
         }
 
