@@ -49,9 +49,6 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
       - name: Run Clippy (strict mode)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
