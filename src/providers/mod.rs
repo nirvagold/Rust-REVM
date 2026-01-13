@@ -10,18 +10,18 @@
 //! - Concurrent request handling
 //! - WebSocket subscriptions for real-time events
 //! - Trace API for deep honeypot analysis
+//! - Solana Yellowstone gRPC + DAS API
 
 pub mod alchemy;
 pub mod dexscreener;
 pub mod rpc;
+pub mod solana;
 pub mod trace;
 pub mod websocket;
-
-// Future: Solana Yellowstone gRPC support
-// pub mod yellowstone;
 
 pub use alchemy::*;
 pub use dexscreener::*;
 pub use rpc::*;
+pub use solana::*;
 pub use trace::*;
 pub use websocket::*;
