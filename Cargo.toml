@@ -44,8 +44,8 @@ hex = "0.4"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 lazy_static = "1.4"
-rand = "0.8"  # For random address generation in PERS algorithm
-reqwest = { version = "0.11", features = ["json"] }  # For RPC calls
+rand = "0.8"  # For random address generation in PERS algorithm and retry jitter
+reqwest = { version = "0.11", features = ["json", "gzip"] }  # For RPC calls with gzip compression
 
 [profile.release]
 opt-level = 'z'      # Optimasi ukuran, bukan kecepatan maksimal (lebih ringan)

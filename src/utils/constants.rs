@@ -27,14 +27,13 @@ pub const USER_AGENT: &str = "RusterShield/1.0.0";
 /// Default timeout for RPC requests (seconds)
 pub const DEFAULT_RPC_TIMEOUT_SECS: u64 = 10;
 
-/// Maximum retry attempts for RPC calls
-pub const MAX_RPC_RETRIES: u32 = 3;
-
-/// Base delay for exponential backoff (milliseconds)
-pub const BASE_RETRY_DELAY_MS: u64 = 100;
-
 /// Default cache TTL (seconds)
 pub const DEFAULT_CACHE_TTL_SECS: u64 = 300;
+
+// Note: Retry constants moved to src/providers/rpc.rs (Alchemy Best Practices)
+// - ALCHEMY_BASE_RETRY_MS = 1000 (start at 1 second)
+// - ALCHEMY_MAX_RETRY_MS = 64000 (cap at 64 seconds)
+// - ALCHEMY_MAX_RETRIES = 7 (exponential: 1s→2s→4s→8s→16s→32s→64s)
 
 // ============================================
 // CHAIN IDS - Single Source of Truth
