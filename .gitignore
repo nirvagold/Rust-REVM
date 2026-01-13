@@ -1,5 +1,15 @@
 /target
 
-
 # Personal files
 profile-readme.txt
+
+# Bot folder (PRIVATE - contains trading logic)
+/bot/
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
