@@ -12,9 +12,12 @@ use tracing::{info, error, warn};
 
 use super::types::*;
 use crate::utils::cache::HoneypotCache;
+use crate::utils::constants::{is_solana_address, CHAIN_ID_SOLANA};
 use crate::providers::dexscreener::DexScreenerClient;
+use crate::providers::solana::SolanaClient;
 use crate::core::honeypot::HoneypotDetector;
 use crate::core::risk_score::RiskScoreBuilder;
+use crate::core::ml_risk::{MLRiskScorer, MLFeatureSet, LiquidityFeatures, TradingFeatures, SocialFeatures};
 use crate::utils::telemetry::TelemetryCollector;
 
 /// Shared application state
@@ -166,7 +169,15 @@ pub async fn check_honeypot(
 ) -> Result<Json<ApiResponse<HoneypotCheckData>>, (StatusCode, Json<ApiResponse<()>>)> {
     let start = Instant::now();
 
-    // Validate address
+    // ============================================
+    // SOLANA DETECTION - Check if address is Solana format
+    // ============================================
+    if is_solana_address(&req.token_address) || req.chain_id == CHAIN_ID_SOLANA {
+        info!("🌐 Detected Solana token: {}", req.token_address);
+        return handle_solana_token(&state, &req, start).await;
+    }
+
+    // Validate EVM address
     let token: Address = req.token_address.parse().map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
@@ -336,25 +347,13 @@ pub async fn check_honeypot(
     if let Some(cached_result) = state.cache.get(&cache_key) {
         info!("⚡ Returning cached result for {} on {}", req.token_address, chain_name);
         
-        // Use auto-detected name/symbol if available, otherwise fetch from RPC
-        let (token_name, token_symbol, token_decimals) = if auto_detected_name.is_some() {
-            (auto_detected_name.clone(), auto_detected_symbol.clone(), None)
-        } else {
-            let token_info = detector.fetch_token_info(token).await;
-            (token_info.name, token_info.symbol, token_info.decimals)
-        };
+        // ALWAYS fetch token name/symbol from RPC (instant, no DexScreener delay)
+        let token_info = detector.fetch_token_info(token).await;
+        let (token_name, token_symbol, token_decimals) = (token_info.name, token_info.symbol, token_info.decimals);
 
-        // Extract market data from detected_info
-        let (price_usd, liquidity_usd, volume_24h_usd, dex_name, pair_address) = match &detected_info {
-            Some(info) => (
-                info.price_usd.clone(),
-                Some(info.best_dex.liquidity_usd),
-                info.volume_24h_usd,
-                Some(info.best_dex.dex_name.clone()),
-                info.pair_address.clone(),
-            ),
-            None => (None, None, None, None, None),
-        };
+        // Market data from DexScreener (optional, with timeout)
+        let (price_usd, liquidity_usd, volume_24h_usd, dex_name, pair_address) = 
+            fetch_market_data_optional(&req.token_address, chain_id).await;
         
         // Calculate risk score from cached result
         let risk_score = calculate_risk_score(&cached_result);
@@ -437,26 +436,14 @@ pub async fn check_honeypot(
             // ============================================
             state.cache.set(&cache_key, hp_result.clone());
 
-            // Use auto-detected name/symbol if available, otherwise fetch from RPC
-            let (token_name, token_symbol, token_decimals) = if auto_detected_name.is_some() {
-                (auto_detected_name, auto_detected_symbol, None)
-            } else {
-                let token_info = detector.fetch_token_info(token).await;
-                info!("📛 Token info: {:?}", token_info);
-                (token_info.name, token_info.symbol, token_info.decimals)
-            };
+            // ALWAYS fetch token name/symbol from RPC (instant, no DexScreener delay)
+            let token_info = detector.fetch_token_info(token).await;
+            let (token_name, token_symbol, token_decimals) = (token_info.name, token_info.symbol, token_info.decimals);
+            info!("📛 Token info from RPC: {:?} ({:?})", token_name, token_symbol);
 
-            // Extract market data from detected_info
-            let (price_usd, liquidity_usd, volume_24h_usd, dex_name, pair_address) = match &detected_info {
-                Some(info) => (
-                    info.price_usd.clone(),
-                    Some(info.best_dex.liquidity_usd),
-                    info.volume_24h_usd,
-                    Some(info.best_dex.dex_name.clone()),
-                    info.pair_address.clone(),
-                ),
-                None => (None, None, None, None, None),
-            };
+            // Market data from DexScreener (optional, with timeout)
+            let (price_usd, liquidity_usd, volume_24h_usd, dex_name, pair_address) = 
+                fetch_market_data_optional(&req.token_address, chain_id).await;
 
             // Calculate risk score based on actual simulation results
             let risk_score = calculate_risk_score(&hp_result);
@@ -759,4 +746,209 @@ fn calculate_risk_score(result: &crate::core::honeypot::HoneypotResult) -> u8 {
 
     // Cap at 100
     (base_score + penalty).min(100) as u8
+}
+
+// ============================================
+// MARKET DATA HELPER (DexScreener with timeout)
+// ============================================
+
+/// Fetch market data from DexScreener with 3 second timeout
+/// Returns (price_usd, liquidity_usd, volume_24h_usd, dex_name, pair_address)
+async fn fetch_market_data_optional(
+    token_address: &str,
+    chain_id: u64,
+) -> (Option<String>, Option<f64>, Option<f64>, Option<String>, Option<String>) {
+    let dexscreener = DexScreenerClient::new();
+    
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        dexscreener.get_pairs_for_chain(token_address, chain_id)
+    ).await {
+        Ok(Ok(pairs)) if !pairs.is_empty() => {
+            let best = &pairs[0];
+            (
+                best.price_usd.clone(),
+                best.liquidity.as_ref().and_then(|l| l.usd),
+                best.volume.as_ref().and_then(|v| v.h24),
+                Some(best.dex_id.clone()),
+                Some(best.pair_address.clone()),
+            )
+        }
+        _ => (None, None, None, None, None)
+    }
+}
+
+// ============================================
+// SOLANA TOKEN HANDLER
+// ============================================
+
+/// Handle Solana token analysis using DexScreener + Solana RPC
+async fn handle_solana_token(
+    state: &Arc<AppState>,
+    req: &HoneypotCheckRequest,
+    start: Instant,
+) -> Result<Json<ApiResponse<HoneypotCheckData>>, (StatusCode, Json<ApiResponse<()>>)> {
+    info!("🌐 Analyzing Solana token: {}", req.token_address);
+    
+    // Get DexScreener data first
+    let dexscreener = DexScreenerClient::new();
+    let dex_data = dexscreener.get_token_pairs(&req.token_address).await.ok();
+    
+    // Filter for Solana pairs
+    let solana_pairs: Vec<_> = dex_data
+        .as_ref()
+        .map(|pairs| pairs.iter().filter(|p| p.chain_id.to_lowercase() == "solana").collect())
+        .unwrap_or_default();
+    
+    if solana_pairs.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::error(
+                ApiError::not_found("Token not found on Solana DEXes"),
+                start.elapsed().as_secs_f64() * 1000.0,
+            )),
+        ));
+    }
+    
+    // Get best pair (highest liquidity)
+    let best_pair = solana_pairs.iter()
+        .max_by(|a, b| {
+            let liq_a = a.liquidity.as_ref().and_then(|l| l.usd).unwrap_or(0.0);
+            let liq_b = b.liquidity.as_ref().and_then(|l| l.usd).unwrap_or(0.0);
+            liq_a.partial_cmp(&liq_b).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap();
+    
+    // Extract market data
+    let token_name = best_pair.base_token.name.clone();
+    let token_symbol = best_pair.base_token.symbol.clone();
+    let price_usd = best_pair.price_usd.clone();
+    let liquidity_usd = best_pair.liquidity.as_ref().and_then(|l| l.usd);
+    let volume_24h_usd = best_pair.volume.as_ref().and_then(|v| v.h24);
+    let dex_name = Some(best_pair.dex_id.clone());
+    let pair_address = Some(best_pair.pair_address.clone());
+    
+    // Try to get additional data from Solana RPC
+    let solana_analysis = match SolanaClient::new() {
+        Ok(client) => client.analyze_token(&req.token_address).await.ok(),
+        Err(e) => {
+            warn!("⚠️ Solana RPC not available: {}", e);
+            None
+        }
+    };
+    
+    // Calculate risk score using ML scorer
+    let mut features = MLFeatureSet::default();
+    
+    // Liquidity features
+    features.liquidity = LiquidityFeatures {
+        total_liquidity_usd: liquidity_usd.unwrap_or(0.0),
+        is_locked: false, // Can't determine for Solana easily
+        lock_duration_days: 0,
+        lp_holder_count: 0,
+        top_lp_holder_percent: 0.0,
+        pool_count: solana_pairs.len() as u32,
+    };
+    
+    // Trading features (estimate from volume)
+    features.trading = TradingFeatures {
+        volume_24h_usd: volume_24h_usd.unwrap_or(0.0),
+        holder_count: 0, // Would need additional RPC call
+        top_10_holder_percent: 0.0,
+        buy_count_24h: 0,
+        sell_count_24h: 0,
+        largest_sell_percent: 0.0,
+        price_change_24h: 0.0,
+    };
+    
+    // Social features - check if pump.fun
+    let is_pump_fun = best_pair.dex_id.to_lowercase().contains("pump");
+    features.social = SocialFeatures {
+        age_hours: 1, // Assume new for pump.fun tokens
+        has_website: false,
+        has_twitter: false,
+        has_telegram: false,
+        twitter_followers: 0,
+        telegram_members: 0,
+        is_verified_project: false,
+    };
+    
+    // Calculate ML risk score
+    let ml_scorer = MLRiskScorer::new();
+    let ml_result = ml_scorer.calculate_score(&features);
+    
+    // Adjust risk for pump.fun tokens (inherently risky)
+    let mut risk_score = ml_result.score as u8;
+    if is_pump_fun {
+        risk_score = risk_score.saturating_add(20).min(100);
+    }
+    
+    // Low liquidity penalty
+    if liquidity_usd.unwrap_or(0.0) < 10000.0 {
+        risk_score = risk_score.saturating_add(15).min(100);
+    }
+    
+    // Determine if honeypot based on Solana analysis
+    let is_honeypot = solana_analysis.as_ref().map(|a| a.is_honeypot).unwrap_or(false);
+    if is_honeypot {
+        risk_score = risk_score.max(80);
+    }
+    
+    // Build reason string
+    let mut reasons = Vec::new();
+    if is_pump_fun {
+        reasons.push("Pump.fun token (high risk category)");
+    }
+    if liquidity_usd.unwrap_or(0.0) < 10000.0 {
+        reasons.push("Low liquidity");
+    }
+    if let Some(ref analysis) = solana_analysis {
+        for flag in &analysis.red_flags {
+            reasons.push(flag.as_str());
+        }
+    }
+    
+    let reason = if reasons.is_empty() {
+        "Solana token analyzed via DexScreener".to_string()
+    } else {
+        format!("Solana token: {}", reasons.join(", "))
+    };
+    
+    // Record telemetry
+    state.telemetry.record_analysis(start.elapsed().as_millis() as u64);
+    
+    // Clone for logging before moving into struct
+    let symbol_for_log = token_symbol.clone();
+    
+    let data = HoneypotCheckData {
+        token_address: req.token_address.clone(),
+        token_name,
+        token_symbol,
+        token_decimals: solana_analysis.as_ref().map(|_| 6), // Most Solana tokens use 6 decimals
+        chain_id: CHAIN_ID_SOLANA,
+        chain_name: "Solana".to_string(),
+        native_symbol: "SOL".to_string(),
+        is_honeypot,
+        risk_score,
+        buy_success: true, // Can't simulate on Solana
+        sell_success: !is_honeypot,
+        buy_tax_percent: 0.0, // Solana doesn't have built-in tax
+        sell_tax_percent: 0.0,
+        total_loss_percent: 0.0,
+        reason,
+        simulation_latency_ms: start.elapsed().as_millis() as u64,
+        price_usd,
+        liquidity_usd,
+        volume_24h_usd,
+        dex_name,
+        pair_address,
+    };
+    
+    info!("✅ Solana analysis complete: {} - Risk: {}/100", 
+          symbol_for_log.as_deref().unwrap_or("Unknown"), risk_score);
+    
+    Ok(Json(ApiResponse::success(
+        data,
+        start.elapsed().as_secs_f64() * 1000.0,
+    )))
 }
