@@ -1,5 +1,31 @@
 /target
 
-
 # Personal files
 profile-readme.txt
+
+# Bot folder (PRIVATE - contains trading logic)
+/bot/
+
+# Environment files (PRIVATE - contains API keys)
+.env
+.env.local
+.env.production
+
+# Tests (PRIVATE - Python tests)
+tests/*.py
+tests/test_*.py
+
+# Telemetry data
+/telemetry/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.idea/
+*.swp
+*.swo
