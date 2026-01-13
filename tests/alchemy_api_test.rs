@@ -384,7 +384,7 @@ async fn test_alchemy_swap_simulation() -> Result<()> {
     
     // Simulate a simple token approval (no ETH transfer, just data)
     let usdc_contract = "0xA0b86a33E6441b8435b662f0E2d0B8A0E4B2B8B0";
-    let spender = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"; // Uniswap V2 Router
+    let _spender = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"; // Uniswap V2 Router
     
     // ERC20 approve(address spender, uint256 amount) = 0x095ea7b3
     let approve_data = "0x095ea7b30000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d0000000000000000000000000000000000000000000000000de0b6b3a7640000"; // approve 1 token

@@ -71,8 +71,8 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Run tests
-        run: cargo test --all-features --verbose
+      - name: Run tests (skip integration tests that need API keys)
+        run: cargo test --lib --all-features --verbose
 
   build:
     name: 🏗️ Build Release
