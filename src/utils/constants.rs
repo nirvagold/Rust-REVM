@@ -27,14 +27,13 @@ pub const USER_AGENT: &str = "RusterShield/1.0.0";
 /// Default timeout for RPC requests (seconds)
 pub const DEFAULT_RPC_TIMEOUT_SECS: u64 = 10;
 
-/// Maximum retry attempts for RPC calls
-pub const MAX_RPC_RETRIES: u32 = 3;
-
-/// Base delay for exponential backoff (milliseconds)
-pub const BASE_RETRY_DELAY_MS: u64 = 100;
-
 /// Default cache TTL (seconds)
 pub const DEFAULT_CACHE_TTL_SECS: u64 = 300;
+
+// Note: Retry constants moved to src/providers/rpc.rs (Alchemy Best Practices)
+// - ALCHEMY_BASE_RETRY_MS = 1000 (start at 1 second)
+// - ALCHEMY_MAX_RETRY_MS = 64000 (cap at 64 seconds)
+// - ALCHEMY_MAX_RETRIES = 7 (exponential: 1s→2s→4s→8s→16s→32s→64s)
 
 // ============================================
 // CHAIN IDS - Single Source of Truth
@@ -54,8 +53,10 @@ pub const CHAIN_ID_OPTIMISM: u64 = 10;
 pub const CHAIN_ID_AVALANCHE: u64 = 43114;
 /// Base
 pub const CHAIN_ID_BASE: u64 = 8453;
+/// Solana (non-EVM, special handling)
+pub const CHAIN_ID_SOLANA: u64 = 900; // Custom ID for Solana
 
-/// All supported chain IDs
+/// All supported EVM chain IDs
 pub const SUPPORTED_CHAIN_IDS: [u64; 7] = [
     CHAIN_ID_ETHEREUM,
     CHAIN_ID_BSC,
@@ -64,6 +65,18 @@ pub const SUPPORTED_CHAIN_IDS: [u64; 7] = [
     CHAIN_ID_OPTIMISM,
     CHAIN_ID_AVALANCHE,
     CHAIN_ID_BASE,
+];
+
+/// All supported chain IDs including Solana
+pub const ALL_SUPPORTED_CHAINS: [u64; 8] = [
+    CHAIN_ID_ETHEREUM,
+    CHAIN_ID_BSC,
+    CHAIN_ID_POLYGON,
+    CHAIN_ID_ARBITRUM,
+    CHAIN_ID_OPTIMISM,
+    CHAIN_ID_AVALANCHE,
+    CHAIN_ID_BASE,
+    CHAIN_ID_SOLANA,
 ];
 
 // ============================================
@@ -187,6 +200,7 @@ pub fn get_chain_name(chain_id: u64) -> &'static str {
         CHAIN_ID_OPTIMISM => "Optimism",
         CHAIN_ID_AVALANCHE => "Avalanche C-Chain",
         CHAIN_ID_BASE => "Base",
+        CHAIN_ID_SOLANA => "Solana",
         _ => "Unknown",
     }
 }
@@ -201,6 +215,7 @@ pub fn get_native_symbol(chain_id: u64) -> &'static str {
         CHAIN_ID_OPTIMISM => "ETH",
         CHAIN_ID_AVALANCHE => "AVAX",
         CHAIN_ID_BASE => "ETH",
+        CHAIN_ID_SOLANA => "SOL",
         _ => "ETH",
     }
 }
@@ -257,6 +272,7 @@ pub fn chain_id_to_dexscreener_name(chain_id: u64) -> &'static str {
         CHAIN_ID_OPTIMISM => "optimism",
         CHAIN_ID_AVALANCHE => "avalanche",
         CHAIN_ID_BASE => "base",
+        CHAIN_ID_SOLANA => "solana",
         _ => "ethereum",
     }
 }
@@ -271,8 +287,23 @@ pub fn dexscreener_name_to_chain_id(name: &str) -> u64 {
         "optimism" => CHAIN_ID_OPTIMISM,
         "avalanche" => CHAIN_ID_AVALANCHE,
         "base" => CHAIN_ID_BASE,
+        "solana" => CHAIN_ID_SOLANA,
         _ => CHAIN_ID_ETHEREUM,
     }
+}
+
+/// Check if chain is Solana (non-EVM)
+pub fn is_solana(chain_id: u64) -> bool {
+    chain_id == CHAIN_ID_SOLANA
+}
+
+/// Check if address looks like Solana (base58, 32-44 chars, no 0x prefix)
+pub fn is_solana_address(address: &str) -> bool {
+    // Solana addresses are base58 encoded, 32-44 characters, no 0x prefix
+    !address.starts_with("0x") 
+        && address.len() >= 32 
+        && address.len() <= 44
+        && address.chars().all(|c| c.is_alphanumeric())
 }
 
 #[cfg(test)]

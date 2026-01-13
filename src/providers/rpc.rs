@@ -3,23 +3,51 @@
 //! CEO Executive Order Implementation:
 //! 1. Dynamic URL Construction from ALCHEMY_API_KEY
 //! 2. Multi-tier RPC with fallback to public RPCs
-//! 3. Exponential backoff retry logic
+//! 3. Exponential backoff retry logic (Alchemy Best Practice: 1s→2s→4s→8s→...→64s with jitter)
 //! 4. User-Agent header & API key protection
 //! 5. Modular architecture for future Solana support
+//! 6. Gzip compression for 75% speedup on large responses (Alchemy Best Practice)
+//! 7. Batch requests support (max 50 per batch - Alchemy Best Practice)
+//! 8. Concurrent request handling with tokio::spawn
+//!
+//! Alchemy Documentation Reference:
+//! - Compression: https://alchemy.com/docs/how-to-enable-compression-to-speed-up-json-rpc-blockchain-requests.mdx
+//! - Batch Requests: https://alchemy.com/docs/reference/batch-requests.mdx
+//! - Throughput & 429: https://alchemy.com/docs/reference/throughput.mdx
+//! - Retries: https://alchemy.com/docs/how-to-implement-retries.mdx
 //!
 //! CEO Directive: Uses constants from utils/constants.rs
 
 use eyre::{eyre, Result};
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
-use serde::Deserialize;
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, USER_AGENT};
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+use rand::Rng;
 
 use crate::utils::constants::{
     build_alchemy_url, get_alchemy_subdomain, get_public_rpc_fallback,
-    BASE_RETRY_DELAY_MS, DEFAULT_RPC_TIMEOUT_SECS, MAX_RPC_RETRIES,
-    SUPPORTED_CHAIN_IDS, USER_AGENT as USER_AGENT_CONST,
+    DEFAULT_RPC_TIMEOUT_SECS, SUPPORTED_CHAIN_IDS, USER_AGENT as USER_AGENT_CONST,
 };
+
+// ============================================
+// ALCHEMY BEST PRACTICE CONSTANTS
+// ============================================
+
+/// Maximum batch size (Alchemy recommends 50 for reliability, NOT 1000)
+pub const MAX_BATCH_SIZE: usize = 50;
+
+/// Base retry delay in milliseconds (Alchemy: start at 1000ms)
+pub const ALCHEMY_BASE_RETRY_MS: u64 = 1000;
+
+/// Maximum retry delay in milliseconds (Alchemy: cap at 64 seconds)
+pub const ALCHEMY_MAX_RETRY_MS: u64 = 64000;
+
+/// Maximum retry attempts (Alchemy: exponential backoff 1s→2s→4s→8s→16s→32s→64s = 7 attempts)
+pub const ALCHEMY_MAX_RETRIES: u32 = 7;
+
+/// Jitter percentage for retry delay (Alchemy: add random jitter to prevent thundering herd)
+pub const RETRY_JITTER_PERCENT: u64 = 20;
 
 /// Alchemy network identifiers for dynamic URL construction
 #[derive(Debug, Clone, Copy)]
@@ -83,14 +111,33 @@ impl PublicRpcFallback {
     }
 }
 
-/// RPC Provider with retry logic and fallback support
+/// Batch JSON-RPC request item
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchRequestItem {
+    pub jsonrpc: &'static str,
+    pub method: String,
+    pub params: serde_json::Value,
+    pub id: u64,
+}
+
+/// Batch JSON-RPC response item
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchResponseItem<T> {
+    #[allow(dead_code)]
+    pub jsonrpc: String,
+    pub result: Option<T>,
+    pub error: Option<RpcError>,
+    pub id: u64,
+}
+
+/// RPC Provider with retry logic, fallback support, and Alchemy best practices
 #[derive(Clone)]
 pub struct RpcProvider {
     /// Primary RPC URL (Alchemy)
     primary_url: String,
     /// Fallback RPC URL (public)
     fallback_url: Option<String>,
-    /// HTTP client with custom headers
+    /// HTTP client with custom headers (gzip enabled)
     client: reqwest::Client,
     /// Chain ID for this provider
     chain_id: u64,
@@ -157,15 +204,18 @@ impl RpcProvider {
         Err(eyre!("ALCHEMY_API_KEY not configured"))
     }
 
-    /// Build HTTP client with custom headers
+    /// Build HTTP client with custom headers (Alchemy Best Practice: gzip compression)
     fn build_client() -> Result<reqwest::Client> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_CONST));
         headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+        // Alchemy Best Practice: Enable gzip compression for 75% speedup on responses >100kb
+        headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("gzip"));
 
         reqwest::Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(DEFAULT_RPC_TIMEOUT_SECS))
+            .gzip(true) // Enable automatic gzip decompression
             .build()
             .map_err(|e| eyre!("Failed to build HTTP client: {}", e))
     }
@@ -205,7 +255,7 @@ impl RpcProvider {
         Err(eyre!("All RPC endpoints failed for {}", self.network_name))
     }
 
-    /// Execute call with exponential backoff retry
+    /// Execute call with Alchemy-recommended exponential backoff (1s→2s→4s→...→64s with jitter)
     async fn call_with_retry<T: for<'de> Deserialize<'de>>(
         &self,
         url: &str,
@@ -213,24 +263,35 @@ impl RpcProvider {
     ) -> Result<T> {
         let mut last_error = None;
 
-        for attempt in 0..MAX_RPC_RETRIES {
+        for attempt in 0..ALCHEMY_MAX_RETRIES {
             if attempt > 0 {
-                let delay = BASE_RETRY_DELAY_MS * (2_u64.pow(attempt - 1));
-                tokio::time::sleep(Duration::from_millis(delay)).await;
+                // Alchemy Best Practice: Exponential backoff with jitter
+                let base_delay = ALCHEMY_BASE_RETRY_MS * (2_u64.pow(attempt - 1));
+                let capped_delay = base_delay.min(ALCHEMY_MAX_RETRY_MS);
+                
+                // Add random jitter (±20%) to prevent thundering herd
+                let jitter_range = (capped_delay * RETRY_JITTER_PERCENT) / 100;
+                let jitter: i64 = rand::thread_rng().gen_range(-(jitter_range as i64)..=(jitter_range as i64));
+                let final_delay = (capped_delay as i64 + jitter).max(100) as u64;
+                
+                debug!("⏳ Retry {}/{} after {}ms (base: {}ms, jitter: {}ms)", 
+                    attempt + 1, ALCHEMY_MAX_RETRIES, final_delay, capped_delay, jitter);
+                tokio::time::sleep(Duration::from_millis(final_delay)).await;
             }
 
             match self.execute_call::<T>(url, payload).await {
                 Ok(result) => return Ok(result),
                 Err(e) => {
                     if e.to_string().contains("429") || e.to_string().contains("rate limit") {
-                        warn!("⏳ Rate limited, backing off (attempt {}/{})", attempt + 1, MAX_RPC_RETRIES);
+                        warn!("⏳ Rate limited (HTTP 429), backing off (attempt {}/{})", 
+                            attempt + 1, ALCHEMY_MAX_RETRIES);
                     }
                     last_error = Some(e);
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| eyre!("Unknown error after {} retries", MAX_RPC_RETRIES)))
+        Err(last_error.unwrap_or_else(|| eyre!("Unknown error after {} retries", ALCHEMY_MAX_RETRIES)))
     }
 
     /// Execute single RPC call
@@ -291,6 +352,146 @@ impl RpcProvider {
     pub fn chain_id(&self) -> u64 {
         self.chain_id
     }
+
+    // ============================================
+    // ALCHEMY BEST PRACTICE: BATCH REQUESTS
+    // ============================================
+
+    /// Execute batch JSON-RPC calls (Alchemy Best Practice: max 50 per batch)
+    /// 
+    /// Reference: https://alchemy.com/docs/reference/batch-requests.mdx
+    /// - Maximum 50 requests per batch for reliability
+    /// - All requests in batch share same retry logic
+    pub async fn batch_call<T: for<'de> Deserialize<'de> + Clone>(
+        &self,
+        requests: Vec<(&str, serde_json::Value)>,
+    ) -> Result<Vec<Result<T>>> {
+        if requests.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Split into chunks of MAX_BATCH_SIZE (50)
+        let chunks: Vec<_> = requests.chunks(MAX_BATCH_SIZE).collect();
+        let mut all_results = Vec::with_capacity(requests.len());
+
+        for chunk in chunks {
+            let batch_payload: Vec<serde_json::Value> = chunk
+                .iter()
+                .enumerate()
+                .map(|(idx, (method, params))| {
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": method,
+                        "params": params,
+                        "id": idx + 1
+                    })
+                })
+                .collect();
+
+            let results = self.execute_batch::<T>(&batch_payload).await?;
+            all_results.extend(results);
+        }
+
+        Ok(all_results)
+    }
+
+    /// Execute batch request with retry
+    async fn execute_batch<T: for<'de> Deserialize<'de> + Clone>(
+        &self,
+        batch_payload: &[serde_json::Value],
+    ) -> Result<Vec<Result<T>>> {
+        let mut last_error = None;
+
+        for attempt in 0..ALCHEMY_MAX_RETRIES {
+            if attempt > 0 {
+                let base_delay = ALCHEMY_BASE_RETRY_MS * (2_u64.pow(attempt - 1));
+                let capped_delay = base_delay.min(ALCHEMY_MAX_RETRY_MS);
+                let jitter_range = (capped_delay * RETRY_JITTER_PERCENT) / 100;
+                let jitter: i64 = rand::thread_rng().gen_range(-(jitter_range as i64)..=(jitter_range as i64));
+                let final_delay = (capped_delay as i64 + jitter).max(100) as u64;
+                
+                tokio::time::sleep(Duration::from_millis(final_delay)).await;
+            }
+
+            let response = self.client
+                .post(&self.primary_url)
+                .json(batch_payload)
+                .send()
+                .await;
+
+            match response {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status == 429 {
+                        last_error = Some(eyre!("Rate limited (HTTP 429)"));
+                        continue;
+                    }
+                    if !status.is_success() {
+                        last_error = Some(eyre!("HTTP error: {}", status));
+                        continue;
+                    }
+
+                    let batch_response: Vec<BatchResponseItem<T>> = resp.json().await
+                        .map_err(|e| eyre!("Failed to parse batch response: {}", e))?;
+
+                    // Convert to Vec<Result<T>>
+                    let results: Vec<Result<T>> = batch_response
+                        .into_iter()
+                        .map(|item| {
+                            if let Some(error) = item.error {
+                                Err(eyre!("RPC error: {} (code: {})", error.message, error.code))
+                            } else if let Some(result) = item.result {
+                                Ok(result)
+                            } else {
+                                Err(eyre!("No result in response for id {}", item.id))
+                            }
+                        })
+                        .collect();
+
+                    return Ok(results);
+                }
+                Err(e) => {
+                    last_error = Some(eyre!("Request failed: {}", e));
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| eyre!("Batch request failed after {} retries", ALCHEMY_MAX_RETRIES)))
+    }
+
+    // ============================================
+    // ALCHEMY BEST PRACTICE: CONCURRENT REQUESTS
+    // ============================================
+
+    /// Execute multiple calls concurrently (Alchemy Best Practice: parallel execution)
+    /// 
+    /// Reference: https://alchemy.com/docs/best-practices-when-using-alchemy.mdx
+    /// - Treat Alchemy as multiple nodes, not single node
+    /// - Use concurrent requests for better throughput
+    pub async fn concurrent_calls<T: for<'de> Deserialize<'de> + Send + 'static>(
+        &self,
+        requests: Vec<(&str, serde_json::Value)>,
+    ) -> Vec<Result<T>> {
+        let futures: Vec<_> = requests
+            .into_iter()
+            .map(|(method, params)| {
+                let provider = self.clone();
+                let method = method.to_string();
+                tokio::spawn(async move {
+                    provider.call::<T>(&method, params).await
+                })
+            })
+            .collect();
+
+        let mut results = Vec::with_capacity(futures.len());
+        for future in futures {
+            match future.await {
+                Ok(result) => results.push(result),
+                Err(e) => results.push(Err(eyre!("Task join error: {}", e))),
+            }
+        }
+        results
+    }
 }
 
 /// JSON-RPC response structure
@@ -305,10 +506,32 @@ struct RpcResponse<T> {
 }
 
 /// JSON-RPC error structure
-#[derive(Debug, Deserialize)]
-struct RpcError {
-    code: i64,
-    message: String,
+#[derive(Debug, Clone, Deserialize)]
+pub struct RpcError {
+    pub code: i64,
+    pub message: String,
+}
+
+impl RpcError {
+    /// Check if this is a rate limit error (Alchemy: HTTP 429 or code -32005)
+    pub fn is_rate_limit(&self) -> bool {
+        self.code == -32005 || self.message.to_lowercase().contains("rate limit")
+    }
+
+    /// Check if this is a method not found error (code -32601)
+    pub fn is_method_not_found(&self) -> bool {
+        self.code == -32601
+    }
+
+    /// Check if this is a parse error (code -32700)
+    pub fn is_parse_error(&self) -> bool {
+        self.code == -32700
+    }
+
+    /// Check if this is an invalid request error (code -32600)
+    pub fn is_invalid_request(&self) -> bool {
+        self.code == -32600
+    }
 }
 
 /// Multi-chain RPC manager
@@ -391,5 +614,35 @@ mod tests {
     fn test_public_fallback() {
         assert!(PublicRpcFallback::get(1).is_some());
         assert!(PublicRpcFallback::get(999).is_none());
+    }
+
+    #[test]
+    fn test_alchemy_retry_constants() {
+        // Verify Alchemy best practice constants
+        assert_eq!(MAX_BATCH_SIZE, 50); // Alchemy recommends 50, not 1000
+        assert_eq!(ALCHEMY_BASE_RETRY_MS, 1000); // Start at 1 second
+        assert_eq!(ALCHEMY_MAX_RETRY_MS, 64000); // Cap at 64 seconds
+        assert_eq!(ALCHEMY_MAX_RETRIES, 7); // 1s→2s→4s→8s→16s→32s→64s
+    }
+
+    #[test]
+    fn test_rpc_error_classification() {
+        let rate_limit_error = RpcError {
+            code: -32005,
+            message: "Rate limit exceeded".to_string(),
+        };
+        assert!(rate_limit_error.is_rate_limit());
+
+        let method_not_found = RpcError {
+            code: -32601,
+            message: "Method not found".to_string(),
+        };
+        assert!(method_not_found.is_method_not_found());
+
+        let parse_error = RpcError {
+            code: -32700,
+            message: "Parse error".to_string(),
+        };
+        assert!(parse_error.is_parse_error());
     }
 }

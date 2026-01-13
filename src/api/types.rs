@@ -80,6 +80,14 @@ impl ApiError {
             details: None,
         }
     }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            code: "NOT_FOUND".to_string(),
+            message: message.into(),
+            details: None,
+        }
+    }
 }
 
 // ============================================
