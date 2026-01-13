@@ -217,6 +217,25 @@ pub struct HoneypotCheckData {
     pub total_loss_percent: f64,
     pub reason: String,
     pub simulation_latency_ms: u64,
+    
+    // ============================================
+    // DexScreener Market Data (NEW!)
+    // ============================================
+    /// Price in USD from DexScreener
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_usd: Option<String>,
+    /// Liquidity in USD
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub liquidity_usd: Option<f64>,
+    /// 24h trading volume in USD
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_24h_usd: Option<f64>,
+    /// DEX name where token trades
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex_name: Option<String>,
+    /// Pair address on DEX
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pair_address: Option<String>,
 }
 
 // ============================================

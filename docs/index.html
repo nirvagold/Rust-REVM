@@ -63,6 +63,13 @@
         
         .risk-bar { height: 8px; border-radius: 4px; background: #21262d; overflow: hidden; }
         .risk-bar-fill { height: 100%; border-radius: 4px; transition: width 1s ease-out; }
+        
+        /* Skeleton Loading */
+        .skeleton { background: linear-gradient(90deg, #21262d 25%, #30363d 50%, #21262d 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: 4px; }
+        @keyframes skeleton-loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .skeleton-text { height: 16px; margin-bottom: 8px; }
+        .skeleton-title { height: 24px; width: 60%; margin-bottom: 12px; }
+        .skeleton-box { height: 80px; margin-bottom: 12px; }
     </style>
 </head>
 <body class="bg-dark-950 text-gray-100 min-h-screen font-sans">
@@ -688,6 +695,53 @@
             return { color: '#ef4444', level: 'CRITICAL', bg: 'bg-neon-red' };
         }
 
+        // Show skeleton loading
+        function showSkeletonLoading() {
+            const resultsPanel = document.getElementById('resultsPanel');
+            resultsPanel.innerHTML = `
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 animate-fadeIn">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex-1">
+                            <div class="skeleton skeleton-title"></div>
+                            <div class="skeleton skeleton-text w-32"></div>
+                        </div>
+                        <div class="skeleton w-16 h-16 rounded-lg"></div>
+                    </div>
+                    <div class="skeleton skeleton-box"></div>
+                    <div class="skeleton skeleton-text"></div>
+                </div>
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 animate-fadeIn" style="animation-delay: 0.1s">
+                    <div class="skeleton skeleton-title w-40"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                </div>
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 animate-fadeIn" style="animation-delay: 0.2s">
+                    <div class="skeleton skeleton-title w-32"></div>
+                    <div class="grid grid-cols-2 gap-4 mt-4">
+                        <div class="skeleton h-20 rounded-lg"></div>
+                        <div class="skeleton h-20 rounded-lg"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Format number helpers
+        function formatUSD(value) {
+            if (!value) return 'N/A';
+            if (value >= 1000000) return '$' + (value / 1000000).toFixed(2) + 'M';
+            if (value >= 1000) return '$' + (value / 1000).toFixed(2) + 'K';
+            return '$' + value.toFixed(2);
+        }
+
+        function formatPrice(price) {
+            if (!price) return 'N/A';
+            const num = parseFloat(price);
+            if (num < 0.00001) return '$' + num.toExponential(2);
+            if (num < 1) return '$' + num.toFixed(6);
+            return '$' + num.toFixed(2);
+        }
+
         // Main analyze function
         async function analyzeToken() {
             const tokenAddress = document.getElementById('tokenAddress').value.trim();
@@ -701,9 +755,10 @@
                 return;
             }
 
-            // Disable button
+            // Disable button and show skeleton
             btn.disabled = true;
             btn.innerHTML = '<div class="spinner"></div> Analyzing...';
+            showSkeletonLoading();
 
             // Start simulation animation
             const animationPromise = animateSimulationLog();
@@ -824,7 +879,38 @@
                         <span class="px-2 py-1 bg-dark-700 rounded text-xs">${data.chain_name}</span>
                         <span class="text-gray-600">•</span>
                         <span class="font-mono text-xs">${data.token_address.slice(0, 10)}...${data.token_address.slice(-8)}</span>
+                        ${data.dex_name ? `<span class="text-gray-600">•</span><span class="text-xs text-neon-cyan">${data.dex_name}</span>` : ''}
                     </div>
+                </div>
+
+                <!-- Market Data Card (from DexScreener) -->
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 animate-fadeIn" style="animation-delay: 0.05s">
+                    <h4 class="font-semibold mb-4 flex items-center gap-2">
+                        <span>📊</span> Market Data
+                        <span class="text-xs text-gray-500 font-normal">(via DexScreener)</span>
+                    </h4>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="text-xs text-gray-400 mb-1">Price</div>
+                            <div class="font-mono text-neon-green font-semibold">${formatPrice(data.price_usd)}</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="text-xs text-gray-400 mb-1">Liquidity</div>
+                            <div class="font-mono text-neon-cyan font-semibold">${formatUSD(data.liquidity_usd)}</div>
+                        </div>
+                        <div class="p-3 bg-dark-700 rounded-lg text-center">
+                            <div class="text-xs text-gray-400 mb-1">Volume 24h</div>
+                            <div class="font-mono text-neon-purple font-semibold">${formatUSD(data.volume_24h_usd)}</div>
+                        </div>
+                    </div>
+                    ${data.pair_address ? `
+                    <div class="mt-3 pt-3 border-t border-dark-600">
+                        <a href="https://dexscreener.com/${data.chain_name.toLowerCase()}/${data.pair_address}" target="_blank" 
+                           class="text-xs text-neon-cyan hover:underline flex items-center gap-1">
+                            View on DexScreener →
+                        </a>
+                    </div>
+                    ` : ''}
                 </div>
 
                 <!-- Tax Breakdown Card -->

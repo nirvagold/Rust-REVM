@@ -418,10 +418,10 @@ impl HoneypotDetector {
             }
         }
 
-        // No liquidity found on any DEX
+        // No liquidity found on any DEX - HIGH RISK!
         Ok(HoneypotResult {
             is_honeypot: false,
-            reason: format!("No liquidity found on {} (tried: {})", self.chain_name, tried_dexes.join(", ")),
+            reason: format!("⚠️ UNVERIFIED - No V2 liquidity on {} (tried: {}). Cannot confirm safety!", self.chain_name, tried_dexes.join(", ")),
             buy_success: false,
             sell_success: false,
             sell_reverted: false,
@@ -429,7 +429,11 @@ impl HoneypotDetector {
             sell_tax_percent: 0.0,
             total_loss_percent: 0.0,
             access_control_penalty,
-            risk_factors: vec![format!("No pair on: {}", tried_dexes.join(", "))],
+            risk_factors: vec![
+                format!("No V2 pair found on: {}", tried_dexes.join(", ")),
+                "Token may trade on V3/unsupported DEX".to_string(),
+                "Cannot verify buy/sell safety".to_string(),
+            ],
             latency_ms,
         })
     }

@@ -225,6 +225,10 @@ impl DexScreenerClient {
             // Add info about V3-only tokens
             has_v2_liquidity: v2_pairs_count > 0,
             total_pairs: all_pairs_count,
+            // Market data from DexScreener
+            price_usd: best_pair.price_usd.clone(),
+            volume_24h_usd: best_pair.volume.as_ref().and_then(|v| v.h24),
+            pair_address: Some(best_pair.pair_address.clone()),
         })
     }
 
@@ -280,6 +284,15 @@ pub struct AutoDetectedToken {
     pub has_v2_liquidity: bool,
     /// Total number of pairs (including V3)
     pub total_pairs: usize,
+    // ============================================
+    // Market Data from DexScreener (NEW!)
+    // ============================================
+    /// Price in USD
+    pub price_usd: Option<String>,
+    /// 24h trading volume
+    pub volume_24h_usd: Option<f64>,
+    /// Pair address
+    pub pair_address: Option<String>,
 }
 
 impl DexPair {

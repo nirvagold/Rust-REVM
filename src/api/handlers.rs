@@ -226,11 +226,15 @@ pub async fn check_honeypot(
                     chain_id: req.chain_id,
                     chain_name: crate::providers::dexscreener::DexScreenerClient::chain_id_to_name_pub(req.chain_id).to_string(),
                     best_dex: discovered,
-                    token_name: best.base_token.name,
-                    token_symbol: best.base_token.symbol,
+                    token_name: best.base_token.name.clone(),
+                    token_symbol: best.base_token.symbol.clone(),
                     all_pairs: vec![],
                     has_v2_liquidity: !v3_only,
                     total_pairs: pairs.len(),
+                    // Market data
+                    price_usd: best.price_usd.clone(),
+                    volume_24h_usd: best.volume.as_ref().and_then(|v| v.h24),
+                    pair_address: Some(best.pair_address.clone()),
                 }), v3_only)
             }
             _ => {
@@ -260,6 +264,17 @@ pub async fn check_honeypot(
             .unwrap_or_else(|| "Unknown DEX".to_string());
         
         info!("⚠️ Token only available on V3/Velodrome-style DEX: {}", dex_name);
+
+        // Extract market data from detected_info
+        let (price_usd, liquidity_usd, volume_24h_usd, pair_address) = match &detected_info {
+            Some(info) => (
+                info.price_usd.clone(),
+                Some(info.best_dex.liquidity_usd),
+                info.volume_24h_usd,
+                info.pair_address.clone(),
+            ),
+            None => (None, None, None, None),
+        };
         
         let data = HoneypotCheckData {
             token_address: req.token_address,
@@ -267,10 +282,10 @@ pub async fn check_honeypot(
             token_symbol: auto_detected_symbol,
             token_decimals: None,
             chain_id: effective_chain_id,
-            chain_name,
+            chain_name: chain_name.clone(),
             native_symbol: "ETH".to_string(),
             is_honeypot: false,
-            risk_score: 0,
+            risk_score: 70, // HIGH risk - cannot verify
             buy_success: false,
             sell_success: false,
             buy_tax_percent: 0.0,
@@ -278,6 +293,12 @@ pub async fn check_honeypot(
             total_loss_percent: 0.0,
             reason: format!("Token only available on {} (V3/Velodrome-style) - not supported yet. Use DEX directly.", dex_name),
             simulation_latency_ms: start.elapsed().as_millis() as u64,
+            // DexScreener market data
+            price_usd,
+            liquidity_usd,
+            volume_24h_usd,
+            dex_name: Some(dex_name),
+            pair_address,
         };
 
         return Ok(Json(ApiResponse::success(
@@ -317,10 +338,22 @@ pub async fn check_honeypot(
         
         // Use auto-detected name/symbol if available, otherwise fetch from RPC
         let (token_name, token_symbol, token_decimals) = if auto_detected_name.is_some() {
-            (auto_detected_name, auto_detected_symbol, None)
+            (auto_detected_name.clone(), auto_detected_symbol.clone(), None)
         } else {
             let token_info = detector.fetch_token_info(token).await;
             (token_info.name, token_info.symbol, token_info.decimals)
+        };
+
+        // Extract market data from detected_info
+        let (price_usd, liquidity_usd, volume_24h_usd, dex_name, pair_address) = match &detected_info {
+            Some(info) => (
+                info.price_usd.clone(),
+                Some(info.best_dex.liquidity_usd),
+                info.volume_24h_usd,
+                Some(info.best_dex.dex_name.clone()),
+                info.pair_address.clone(),
+            ),
+            None => (None, None, None, None, None),
         };
         
         // Calculate risk score from cached result
@@ -343,6 +376,12 @@ pub async fn check_honeypot(
             total_loss_percent: cached_result.total_loss_percent,
             reason: format!("{} (cached)", cached_result.reason),
             simulation_latency_ms: 0, // Instant from cache
+            // DexScreener market data
+            price_usd,
+            liquidity_usd,
+            volume_24h_usd,
+            dex_name,
+            pair_address,
         };
 
         return Ok(Json(ApiResponse::success(
@@ -407,6 +446,18 @@ pub async fn check_honeypot(
                 (token_info.name, token_info.symbol, token_info.decimals)
             };
 
+            // Extract market data from detected_info
+            let (price_usd, liquidity_usd, volume_24h_usd, dex_name, pair_address) = match &detected_info {
+                Some(info) => (
+                    info.price_usd.clone(),
+                    Some(info.best_dex.liquidity_usd),
+                    info.volume_24h_usd,
+                    Some(info.best_dex.dex_name.clone()),
+                    info.pair_address.clone(),
+                ),
+                None => (None, None, None, None, None),
+            };
+
             // Calculate risk score based on actual simulation results
             let risk_score = calculate_risk_score(&hp_result);
 
@@ -443,6 +494,12 @@ pub async fn check_honeypot(
                 total_loss_percent: hp_result.total_loss_percent,
                 reason: hp_result.reason,
                 simulation_latency_ms: hp_result.latency_ms,
+                // DexScreener market data
+                price_usd,
+                liquidity_usd,
+                volume_24h_usd,
+                dex_name,
+                pair_address,
             };
 
             Ok(Json(ApiResponse::success(
@@ -667,11 +724,13 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<ApiResponse<S
 /// Calculate risk score from HoneypotResult
 /// PERS v2 algorithm implementation
 fn calculate_risk_score(result: &crate::core::honeypot::HoneypotResult) -> u8 {
-    // Special case: No liquidity found - not necessarily dangerous
-    // Token might just trade on a different DEX
+    // Special case: No liquidity found - THIS IS SUSPICIOUS!
+    // If we can't simulate buy/sell, we can't verify safety
+    // Treat as HIGH RISK (not safe to trade)
     if !result.buy_success && !result.sell_success && !result.is_honeypot && !result.sell_reverted {
-        // No liquidity = unknown, give neutral score
-        return 30; // "LOW" risk - we just couldn't test it
+        // No liquidity = UNVERIFIED = HIGH RISK
+        // User should NOT trade tokens we can't verify
+        return 70; // "HIGH" risk - cannot verify safety
     }
 
     // Base score based on simulation results
