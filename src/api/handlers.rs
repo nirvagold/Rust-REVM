@@ -667,11 +667,13 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<ApiResponse<S
 /// Calculate risk score from HoneypotResult
 /// PERS v2 algorithm implementation
 fn calculate_risk_score(result: &crate::core::honeypot::HoneypotResult) -> u8 {
-    // Special case: No liquidity found - not necessarily dangerous
-    // Token might just trade on a different DEX
+    // Special case: No liquidity found - THIS IS SUSPICIOUS!
+    // If we can't simulate buy/sell, we can't verify safety
+    // Treat as HIGH RISK (not safe to trade)
     if !result.buy_success && !result.sell_success && !result.is_honeypot && !result.sell_reverted {
-        // No liquidity = unknown, give neutral score
-        return 30; // "LOW" risk - we just couldn't test it
+        // No liquidity = UNVERIFIED = HIGH RISK
+        // User should NOT trade tokens we can't verify
+        return 70; // "HIGH" risk - cannot verify safety
     }
 
     // Base score based on simulation results
