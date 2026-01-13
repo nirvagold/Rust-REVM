@@ -452,7 +452,7 @@
                     <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
                         <div class="p-4 border-b border-dark-600 flex items-center gap-3">
                             <span class="px-2 py-1 bg-neon-cyan/20 text-neon-cyan text-xs font-bold rounded">POST</span>
-                            <code class="text-sm">/api/v1/honeypot</code>
+                            <code class="text-sm">/v1/honeypot/check</code>
                             <span class="text-gray-500 text-sm ml-auto">Honeypot Detection</span>
                         </div>
                         <div class="p-4">
@@ -495,7 +495,7 @@
                     <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
                         <div class="p-4 border-b border-dark-600 flex items-center gap-3">
                             <span class="px-2 py-1 bg-neon-purple/20 text-neon-purple text-xs font-bold rounded">POST</span>
-                            <code class="text-sm">/api/v1/batch</code>
+                            <code class="text-sm">/v1/analyze/batch</code>
                             <span class="text-gray-500 text-sm ml-auto">Batch Analysis</span>
                         </div>
                         <div class="p-4">
@@ -515,7 +515,7 @@
                     <div class="bg-dark-800 rounded-xl border border-dark-600 overflow-hidden">
                         <div class="p-4 border-b border-dark-600 flex items-center gap-3">
                             <span class="px-2 py-1 bg-neon-green/20 text-neon-green text-xs font-bold rounded">GET</span>
-                            <code class="text-sm">/api/v1/stats</code>
+                            <code class="text-sm">/v1/stats</code>
                             <span class="text-gray-500 text-sm ml-auto">API Statistics</span>
                         </div>
                         <div class="p-4">
@@ -712,7 +712,7 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
-                const response = await fetch(`${API_BASE}/api/v1/honeypot`, {
+                const response = await fetch(`${API_BASE}/v1/honeypot/check`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
