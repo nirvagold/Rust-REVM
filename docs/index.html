@@ -917,33 +917,45 @@
                 <div class="bg-dark-800 rounded-xl p-6 border border-dark-600 animate-fadeIn" style="animation-delay: 0.1s">
                     <h4 class="font-semibold mb-4 flex items-center gap-2">
                         <span>💸</span> Tax Breakdown
+                        ${(!data.buy_success && !data.sell_success) ? '<span class="text-xs text-neon-yellow font-normal">(Unverified)</span>' : ''}
                     </h4>
+                    ${(!data.buy_success && !data.sell_success) ? `
+                    <div class="p-4 bg-neon-yellow/10 border border-neon-yellow/30 rounded-lg mb-4">
+                        <div class="flex items-start gap-2">
+                            <span class="text-neon-yellow">⚠️</span>
+                            <div class="text-sm">
+                                <div class="font-semibold text-neon-yellow">Cannot Verify Tax</div>
+                                <div class="text-xs text-gray-400 mt-1">No V2 liquidity found. Token may trade on Uniswap V3 or unsupported DEX. Tax data shown is 0% because simulation couldn't execute.</div>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
                     <div class="space-y-4">
                         <div class="risk-breakdown-item">
                             <div class="flex justify-between mb-1">
                                 <span class="text-sm text-gray-400">Buy Tax</span>
-                                <span class="font-mono ${data.buy_tax_percent > 10 ? 'text-neon-yellow' : 'text-neon-green'}">${data.buy_tax_percent.toFixed(2)}%</span>
+                                <span class="font-mono ${data.buy_tax_percent > 10 ? 'text-neon-yellow' : (data.buy_success ? 'text-neon-green' : 'text-gray-500')}">${data.buy_success ? data.buy_tax_percent.toFixed(2) + '%' : 'N/A'}</span>
                             </div>
                             <div class="risk-bar">
-                                <div class="risk-bar-fill" style="width: ${Math.min(data.buy_tax_percent, 100)}%; background: ${data.buy_tax_percent > 10 ? '#f59e0b' : '#10b981'}"></div>
+                                <div class="risk-bar-fill" style="width: ${data.buy_success ? Math.min(data.buy_tax_percent, 100) : 0}%; background: ${data.buy_tax_percent > 10 ? '#f59e0b' : '#10b981'}"></div>
                             </div>
                         </div>
                         <div class="risk-breakdown-item">
                             <div class="flex justify-between mb-1">
                                 <span class="text-sm text-gray-400">Sell Tax</span>
-                                <span class="font-mono ${data.sell_tax_percent > 10 ? 'text-neon-red' : 'text-neon-green'}">${data.sell_tax_percent.toFixed(2)}%</span>
+                                <span class="font-mono ${data.sell_tax_percent > 10 ? 'text-neon-red' : (data.sell_success ? 'text-neon-green' : 'text-gray-500')}">${data.sell_success ? data.sell_tax_percent.toFixed(2) + '%' : 'N/A'}</span>
                             </div>
                             <div class="risk-bar">
-                                <div class="risk-bar-fill" style="width: ${Math.min(data.sell_tax_percent, 100)}%; background: ${data.sell_tax_percent > 10 ? '#ef4444' : '#10b981'}"></div>
+                                <div class="risk-bar-fill" style="width: ${data.sell_success ? Math.min(data.sell_tax_percent, 100) : 0}%; background: ${data.sell_tax_percent > 10 ? '#ef4444' : '#10b981'}"></div>
                             </div>
                         </div>
                         <div class="risk-breakdown-item">
                             <div class="flex justify-between mb-1">
                                 <span class="text-sm text-gray-400">Total Loss</span>
-                                <span class="font-mono ${data.total_loss_percent > 20 ? 'text-neon-red' : 'text-neon-green'}">${data.total_loss_percent.toFixed(2)}%</span>
+                                <span class="font-mono ${data.total_loss_percent > 20 ? 'text-neon-red' : ((data.buy_success || data.sell_success) ? 'text-neon-green' : 'text-gray-500')}">${(data.buy_success || data.sell_success) ? data.total_loss_percent.toFixed(2) + '%' : 'N/A'}</span>
                             </div>
                             <div class="risk-bar">
-                                <div class="risk-bar-fill" style="width: ${Math.min(data.total_loss_percent, 100)}%; background: ${data.total_loss_percent > 20 ? '#ef4444' : '#10b981'}"></div>
+                                <div class="risk-bar-fill" style="width: ${(data.buy_success || data.sell_success) ? Math.min(data.total_loss_percent, 100) : 0}%; background: ${data.total_loss_percent > 20 ? '#ef4444' : '#10b981'}"></div>
                             </div>
                         </div>
                     </div>
