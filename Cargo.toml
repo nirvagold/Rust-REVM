@@ -24,6 +24,7 @@ alloy-sol-types = "0.8"
 # Async runtime
 tokio = { version = "1.43", features = ["full", "rt-multi-thread", "macros"] }
 futures-util = "0.3"
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }  # WebSocket client
 
 # REVM - Fast EVM simulator
 revm = { version = "18", default-features = false, features = ["std", "serde"] }
