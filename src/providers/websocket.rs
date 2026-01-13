@@ -286,7 +286,7 @@ impl AlchemyWsClient {
                 sub_id,
                 tx,
                 is_connected,
-                |msg| Self::parse_new_head(msg),
+                Self::parse_new_head,
             )
             .await;
         });
@@ -313,7 +313,7 @@ impl AlchemyWsClient {
                 sub_id,
                 tx,
                 is_connected,
-                |msg| Self::parse_log(msg),
+                Self::parse_log,
             )
             .await;
         });
@@ -354,7 +354,7 @@ impl AlchemyWsClient {
                 sub_id,
                 tx,
                 is_connected,
-                |msg| Self::parse_pending_tx(msg),
+                Self::parse_pending_tx,
             )
             .await;
         });
@@ -382,7 +382,7 @@ impl AlchemyWsClient {
                 sub_id,
                 tx,
                 is_connected,
-                |msg| Self::parse_mined_tx(msg),
+                Self::parse_mined_tx,
             )
             .await;
         });
@@ -756,6 +756,6 @@ mod tests {
 
         let weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
         let new_token = event.get_new_token(weth);
-        assert_eq!(new_token, Some("0xnewtoken".as_ref()));
+        assert_eq!(new_token, Some("0xnewtoken"));
     }
 }

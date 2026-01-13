@@ -838,40 +838,38 @@ async fn handle_solana_token(
     };
     
     // Calculate risk score using ML scorer
-    let mut features = MLFeatureSet::default();
-    
-    // Liquidity features
-    features.liquidity = LiquidityFeatures {
-        total_liquidity_usd: liquidity_usd.unwrap_or(0.0),
-        is_locked: false, // Can't determine for Solana easily
-        lock_duration_days: 0,
-        lp_holder_count: 0,
-        top_lp_holder_percent: 0.0,
-        pool_count: solana_pairs.len() as u32,
+    let features = MLFeatureSet {
+        liquidity: LiquidityFeatures {
+            total_liquidity_usd: liquidity_usd.unwrap_or(0.0),
+            is_locked: false,
+            lock_duration_days: 0,
+            lp_holder_count: 0,
+            top_lp_holder_percent: 0.0,
+            pool_count: solana_pairs.len() as u32,
+        },
+        trading: TradingFeatures {
+            volume_24h_usd: volume_24h_usd.unwrap_or(0.0),
+            holder_count: 0,
+            top_10_holder_percent: 0.0,
+            buy_count_24h: 0,
+            sell_count_24h: 0,
+            largest_sell_percent: 0.0,
+            price_change_24h: 0.0,
+        },
+        social: SocialFeatures {
+            age_hours: 1,
+            has_website: false,
+            has_twitter: false,
+            has_telegram: false,
+            twitter_followers: 0,
+            telegram_members: 0,
+            is_verified_project: false,
+        },
+        ..Default::default()
     };
     
-    // Trading features (estimate from volume)
-    features.trading = TradingFeatures {
-        volume_24h_usd: volume_24h_usd.unwrap_or(0.0),
-        holder_count: 0, // Would need additional RPC call
-        top_10_holder_percent: 0.0,
-        buy_count_24h: 0,
-        sell_count_24h: 0,
-        largest_sell_percent: 0.0,
-        price_change_24h: 0.0,
-    };
-    
-    // Social features - check if pump.fun
+    // Check if pump.fun
     let is_pump_fun = best_pair.dex_id.to_lowercase().contains("pump");
-    features.social = SocialFeatures {
-        age_hours: 1, // Assume new for pump.fun tokens
-        has_website: false,
-        has_twitter: false,
-        has_telegram: false,
-        twitter_followers: 0,
-        telegram_members: 0,
-        is_verified_project: false,
-    };
     
     // Calculate ML risk score
     let ml_scorer = MLRiskScorer::new();

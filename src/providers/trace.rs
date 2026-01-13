@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn test_honeypot_confidence_calculation() {
         // This would be a more complex test in practice
-        let red_flags = vec![
+        let red_flags = [
             HoneypotRedFlag {
                 flag_type: RedFlagType::BlacklistCall,
                 description: "Test".to_string(),

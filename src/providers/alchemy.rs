@@ -293,6 +293,7 @@ impl AlchemyClient {
     /// 
     /// Compute Units: 120 CU
     /// Reference: https://alchemy.com/docs/reference/transfers-api-quickstart.mdx
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_asset_transfers(
         &self,
         from_address: Option<&str>,
