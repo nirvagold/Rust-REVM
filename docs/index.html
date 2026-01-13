@@ -709,6 +709,9 @@
             const animationPromise = animateSimulationLog();
 
             try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
                 const response = await fetch(`${API_BASE}/api/v1/honeypot`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -716,11 +719,31 @@
                         token_address: tokenAddress,
                         chain_id: chainId,
                         test_amount_eth: testAmount
-                    })
+                    }),
+                    signal: controller.signal
                 });
 
+                clearTimeout(timeoutId);
                 await animationPromise;
-                const data = await response.json();
+
+                // Check if response is ok
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errorMsg = `HTTP ${response.status}`;
+                    try {
+                        const errorJson = JSON.parse(errorText);
+                        errorMsg = errorJson.error?.message || errorMsg;
+                    } catch { errorMsg = errorText || errorMsg; }
+                    throw new Error(errorMsg);
+                }
+
+                // Parse JSON safely
+                const text = await response.text();
+                if (!text || text.trim() === '') {
+                    throw new Error('Empty response from server');
+                }
+
+                const data = JSON.parse(text);
 
                 if (data.success && data.data) {
                     showSimulationSuccess();
@@ -739,13 +762,15 @@
                 }
             } catch (error) {
                 await animationPromise;
-                showSimulationError(error.message);
+                const errorMsg = error.name === 'AbortError' ? 'Request timeout (60s) - server may be busy' : error.message;
+                showSimulationError(errorMsg);
                 resultsPanel.innerHTML = `
                     <div class="bg-dark-800 rounded-xl p-6 border border-neon-red/50">
                         <div class="text-center">
                             <div class="text-4xl mb-4">🔌</div>
                             <h3 class="text-lg font-semibold text-neon-red mb-2">Connection Error</h3>
-                            <p class="text-gray-400 text-sm">${error.message}</p>
+                            <p class="text-gray-400 text-sm">${errorMsg}</p>
+                            <p class="text-xs text-gray-600 mt-2">Try again or check if the token exists on supported chains</p>
                         </div>
                     </div>
                 `;
