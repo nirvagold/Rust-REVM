@@ -9,10 +9,12 @@
 //! - Exponential backoff with jitter (1s→64s)
 //! - Concurrent request handling
 //! - WebSocket subscriptions for real-time events
+//! - Trace API for deep honeypot analysis
 
 pub mod alchemy;
 pub mod dexscreener;
 pub mod rpc;
+pub mod trace;
 pub mod websocket;
 
 // Future: Solana Yellowstone gRPC support
@@ -21,4 +23,5 @@ pub mod websocket;
 pub use alchemy::*;
 pub use dexscreener::*;
 pub use rpc::*;
+pub use trace::*;
 pub use websocket::*;

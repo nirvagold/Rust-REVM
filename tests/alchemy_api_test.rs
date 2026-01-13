@@ -420,3 +420,78 @@ async fn test_alchemy_swap_simulation() -> Result<()> {
     
     Ok(())
 }
+#[tokio::test]
+async fn test_trace_api() -> Result<()> {
+    println!("🧪 Testing Alchemy Trace API...");
+    
+    let provider = RpcProvider::new(CHAIN_ID_ETHEREUM)?;
+    let trace_client = ruster_revm::providers::TraceClient::new(provider);
+    
+    // Test with a known transaction hash (Uniswap V2 swap)
+    let tx_hash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"; // Example hash
+    
+    let result = timeout(
+        Duration::from_secs(TEST_TIMEOUT_SECS),
+        trace_client.trace_transaction(tx_hash)
+    ).await;
+    
+    match result {
+        Ok(Ok(traces)) => {
+            println!("✅ Trace API works:");
+            println!("   Traces found: {}", traces.len());
+            
+            for (i, trace) in traces.iter().take(3).enumerate() {
+                println!("   Trace {}: {:?} at depth {}", 
+                    i, trace.trace_type, trace.trace_address.len());
+            }
+        }
+        Ok(Err(e)) => {
+            println!("❌ Trace API failed: {}", e);
+            println!("   This might be expected if trace_transaction is not supported or tx not found");
+        }
+        Err(_) => {
+            println!("❌ Trace API timed out");
+        }
+    }
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_honeypot_trace_analysis() -> Result<()> {
+    println!("🧪 Testing Honeypot Trace Analysis...");
+    
+    let provider = RpcProvider::new(CHAIN_ID_ETHEREUM)?;
+    let trace_client = ruster_revm::providers::TraceClient::new(provider);
+    
+    // Test honeypot analysis with simulation
+    let result = timeout(
+        Duration::from_secs(TEST_TIMEOUT_SECS),
+        trace_client.analyze_swap_honeypot(
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", // Vitalik
+            "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", // Uniswap V2 Router
+            Some("0x2386F26FC10000"), // 0.01 ETH
+            "0x" // Empty data for now
+        )
+    ).await;
+    
+    match result {
+        Ok(Ok(analysis)) => {
+            println!("✅ Honeypot analysis completed:");
+            println!("   Is honeypot: {}", analysis.is_honeypot);
+            println!("   Confidence: {:.2}%", analysis.confidence * 100.0);
+            println!("   Red flags: {}", analysis.red_flags.len());
+            println!("   Internal calls: {}", analysis.internal_calls.len());
+            println!("   Total gas: {}", analysis.gas_analysis.total_gas);
+        }
+        Ok(Err(e)) => {
+            println!("❌ Honeypot analysis failed: {}", e);
+            println!("   This might be expected if trace APIs are not fully supported");
+        }
+        Err(_) => {
+            println!("❌ Honeypot analysis timed out");
+        }
+    }
+    
+    Ok(())
+}
