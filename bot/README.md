@@ -1,121 +1,145 @@
-# 🛡️ Ruster Shield Telegram Bot
+# 🛡️ Ruster Shield Bot Suite
 
-Personal Telegram bot for honeypot detection using Ruster Shield API.
+Personal trading bots powered by Ruster Shield API.
 
-## Setup
+## Bots Available
 
-### 1. Create Telegram Bot
+| Bot | Purpose | Risk Level |
+|-----|---------|------------|
+| `telegram_bot.py` | Manual token checking | 🟢 Safe |
+| `sniper_bot.py` | Auto-scanner + alerts | 🟡 Medium |
+| `trading_bot.py` | Full trading (buy/sell) | 🔴 High |
 
-1. Open Telegram and message [@BotFather](https://t.me/BotFather)
-2. Send `/newbot`
-3. Follow the instructions to create your bot
-4. Copy the bot token (looks like `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+## Quick Start
 
-### 2. Configure Environment
+### 1. Setup Environment
 
 ```bash
-# Copy example env
 cp .env.example .env
-
-# Edit .env and add your token
-TELEGRAM_BOT_TOKEN=your_bot_token_here
+# Edit .env with your values
 ```
 
-### 3. Install Dependencies
+### 2. Install Dependencies
 
 ```bash
 cd bot
 pip install -r requirements.txt
 ```
 
-### 4. Run Bot
+### 3. Get Telegram Credentials
+
+1. Create bot via [@BotFather](https://t.me/BotFather) → get `TELEGRAM_BOT_TOKEN`
+2. Message [@userinfobot](https://t.me/userinfobot) → get `OWNER_CHAT_ID`
+
+## Bot Details
+
+### 📱 Telegram Bot (`telegram_bot.py`)
+
+Simple manual checker.
 
 ```bash
 python telegram_bot.py
 ```
 
-## Commands
+Commands:
+- `/check <address>` - Check token
+- `/chains` - Show supported chains
+- `/help` - Help
 
-| Command | Description |
-|---------|-------------|
-| `/check <address>` | Analyze token (auto-detect chain) |
-| `/check <address> <chain_id>` | Analyze on specific chain |
-| `/chains` | Show supported chains |
-| `/help` | Show help |
+---
 
-## Examples
+### 🎯 Sniper Bot (`sniper_bot.py`)
 
-```
-/check 0xdAC17F958D2ee523a2206206994597C13D831ec7
-/check 0x... 56
-```
-
-## Supported Chains
-
-| Chain ID | Chain | Symbol |
-|----------|-------|--------|
-| 0 | Auto-Detect | - |
-| 1 | Ethereum | ETH |
-| 56 | BSC | BNB |
-| 137 | Polygon | MATIC |
-| 42161 | Arbitrum | ETH |
-| 10 | Optimism | ETH |
-| 43114 | Avalanche | AVAX |
-| 8453 | Base | ETH |
-
-## Response Example
-
-```
-🟢 USDT - Tether USD
-
-✅ NOT A HONEYPOT
-
-📊 Risk Score: 15/100 (SAFE)
-🔗 Chain: Ethereum
-
-💰 Market Data:
-├ Price: $1.00
-├ Liquidity: $125.5M
-└ Volume 24h: $45.2M
-
-💸 Tax Breakdown:
-├ Buy Tax: 0.00%
-├ Sell Tax: 0.00%
-└ Total Loss: 0.00%
-
-🧪 Simulation:
-├ Buy: ✅
-├ Sell: ✅
-└ Latency: 450ms
-```
-
-## Running as Service (Linux)
-
-Create systemd service:
+Auto-scans DexScreener for new pairs, checks via Ruster Shield API, sends alerts.
 
 ```bash
-sudo nano /etc/systemd/system/ruster-bot.service
+python sniper_bot.py
 ```
 
-```ini
-[Unit]
-Description=Ruster Shield Telegram Bot
-After=network.target
+Features:
+- Monitors BSC, ETH, Base, Arbitrum
+- Filters by age, liquidity, volume
+- Auto honeypot check via API
+- Telegram alerts with buy buttons
+- Optional auto-buy (disabled by default)
 
-[Service]
-Type=simple
-User=your_user
-WorkingDirectory=/path/to/project/bot
-ExecStart=/usr/bin/python3 telegram_bot.py
-Restart=always
-RestartSec=10
-Environment=TELEGRAM_BOT_TOKEN=your_token
-
-[Install]
-WantedBy=multi-user.target
+Configuration (in `sniper_bot.py`):
+```python
+SCAN_CONFIG = {
+    "max_pair_age_minutes": 30,
+    "min_liquidity_usd": 5000,
+    "max_risk_score": 40,
+    "auto_buy_enabled": False,  # ⚠️ DANGEROUS
+}
 ```
+
+---
+
+### 💰 Trading Bot (`trading_bot.py`)
+
+Full trading with PIN protection.
 
 ```bash
-sudo systemctl enable ruster-bot
-sudo systemctl start ruster-bot
+python trading_bot.py
 ```
+
+Commands:
+- `/check <address>` - Check + buy buttons
+- `/buy <address> <amount>` - Buy (requires PIN)
+- `/sell <address> <percent>` - Sell (requires PIN)
+- `/balance` - Check wallet
+- `/setpin <pin>` - Set trading PIN
+
+⚠️ **REQUIRES:**
+- `WALLET_PRIVATE_KEY` in .env
+- `TRADING_PIN` set via `/setpin`
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Your Computer                        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │ Sniper Bot  │  │ Trading Bot │  │  Telegram Bot   │  │
+│  │ (scanner)   │  │ (executor)  │  │  (manual)       │  │
+│  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘  │
+│         │                │                   │          │
+│         └────────────────┼───────────────────┘          │
+│                          │                              │
+└──────────────────────────┼──────────────────────────────┘
+                           │ HTTP
+                           ▼
+              ┌────────────────────────┐
+              │   Koyeb (Ruster API)   │
+              │   /v1/honeypot/check   │
+              └────────────┬───────────┘
+                           │
+              ┌────────────┴───────────┐
+              │                        │
+              ▼                        ▼
+        ┌──────────┐            ┌──────────────┐
+        │ Alchemy  │            │ DexScreener  │
+        │  (RPC)   │            │   (prices)   │
+        └──────────┘            └──────────────┘
+```
+
+## Safety Notes
+
+1. **Never share your private key**
+2. **Start with small amounts** (0.01 BNB)
+3. **Test on BSC first** (cheapest gas)
+4. **Keep auto-buy disabled** until you trust the system
+5. **Monitor your wallet** regularly
+
+## Troubleshooting
+
+### "No V2 liquidity"
+Token trades on Uniswap V3 or unsupported DEX. Skip it.
+
+### "Risk too high"
+Token failed safety checks. Don't buy.
+
+### "API timeout"
+Koyeb server busy. Wait and retry.
