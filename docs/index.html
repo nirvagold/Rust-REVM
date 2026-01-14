@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ruster Shield - Pre-Execution Token Risk Analyzer</title>
-    <meta name="description" content="Detect honeypot tokens instantly with REVM simulation. Multi-chain support for Ethereum, BSC, Polygon, Arbitrum, Optimism, Avalanche, and Base.">
+    <meta name="description" content="Detect honeypot tokens instantly with REVM simulation. Multi-chain support for Ethereum, BSC, Polygon, Arbitrum, Optimism, Avalanche, Base, and Solana. ML-powered risk scoring.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -129,6 +129,7 @@
                     <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Optimism</span>
                     <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Avalanche</span>
                     <span class="chain-badge online px-3 py-1.5 bg-dark-700 rounded-full text-xs border border-dark-600">Base</span>
+                    <span class="chain-badge online px-3 py-1.5 bg-gradient-to-r from-purple-500 to-green-400 rounded-full text-xs border border-purple-500/30 text-white font-medium">🆕 Solana</span>
                 </div>
             </div>
 
@@ -157,6 +158,7 @@
                                         <option value="10">Optimism (ETH)</option>
                                         <option value="43114">Avalanche (AVAX)</option>
                                         <option value="8453">Base (ETH)</option>
+                                        <option value="900">🆕 Solana (SOL)</option>
                                     </select>
                                 </div>
                                 <div>
@@ -190,7 +192,7 @@
                     <div class="bg-dark-800 rounded-xl p-8 border border-dark-600 text-center">
                         <div class="text-6xl mb-4 opacity-30">🛡️</div>
                         <p class="text-gray-500">Enter a token address to begin analysis</p>
-                        <p class="text-xs text-gray-600 mt-2">Supports 7 chains with auto-detection</p>
+                        <p class="text-xs text-gray-600 mt-2">Supports 8 chains including Solana with auto-detection</p>
                     </div>
                 </div>
             </div>
